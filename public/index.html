@@ -174,7 +174,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
 
 <script>
 const LABELS={h:{t:"Halal",cls:"h"},x:{t:"Haram",cls:"x"},d:{t:"Doubtful",cls:"d"},u:{t:"Unknown",cls:"u"}};
-let DB={}, stream=null, facing="environment";
+let DB={}, stream=null, facing="environment", ocrLang="eng";
 const $=id=>document.getElementById(id);
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._);t._=setTimeout(()=>t.classList.remove("on"),2400);}
 function setProg(el,p){el.classList.toggle("on",p>=0);if(p>=0)el.querySelector("i").style.width=p+"%";}
@@ -214,7 +214,7 @@ $("snap").onclick=async()=>{
   const v=$("preview"),c=$("canvas");c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d").drawImage(v,0,0);
   $("snap").disabled=true;$("status").textContent="Reading label…";setProg($("prog"),5);
   try{
-    const{data}=await Tesseract.recognize(c,"eng+ara+urd+fra+spa",{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
+    const{data}=await Tesseract.recognize(c,ocrLang,{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
     setProg($("prog"),-1);$("status").textContent="";
     const txt=data.text.trim();
     if(!txt){toast("Couldn't read the label — try again or type it");$("snap").disabled=false;return;}
