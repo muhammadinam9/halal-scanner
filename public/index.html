@@ -106,12 +106,13 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
           <video id="preview" autoplay playsinline muted></video>
           <canvas id="canvas" hidden></canvas>
           <div class="cam-frame"></div>
-          <div class="hint" id="camHint">Starting camera…</div>
+          <div class="hint" id="camHint">Tap “Start camera” to scan a label</div>
         </div>
         <div style="height:11px"></div>
         <div class="btn-row">
-          <button class="btn btn-primary" id="snap">📸 Capture &amp; read</button>
-          <button class="btn btn-ghost" id="flip" style="flex:0 0 52px;padding:0">🔄</button>
+          <button class="btn btn-primary" id="startCam">📷 Start camera</button>
+          <button class="btn btn-primary" id="snap" style="display:none">📸 Capture &amp; read</button>
+          <button class="btn btn-ghost" id="flip" style="flex:0 0 52px;padding:0;display:none">🔄</button>
         </div>
         <div class="divider">or type / paste</div>
         <textarea id="manual" placeholder="e.g. Sugar, gelatin, mono- and diglycerides, carmine (E120), natural flavor…"></textarea>
@@ -158,6 +159,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <label class="fld">Message (editable)</label>
         <textarea id="emBody" style="min-height:150px" placeholder="Your drafted message will appear here…"></textarea>
         <div style="height:6px"></div>
+        <button class="btn btn-ghost" id="findEmailBtn">🔎 Find company email</button>
         <label class="fld">Company email</label>
         <input type="email" id="emTo" placeholder="support@company.com">
         <label class="fld">Your email (so they can reply to you)</label>
@@ -200,10 +202,11 @@ async function startCam(){
     if(stream)stream.getTracks().forEach(t=>t.stop());
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing}});
     $("preview").srcObject=stream;$("camHint").textContent="Fill the frame with the ingredients list";
+    $("startCam").style.display="none";$("snap").style.display="";$("flip").style.display="";
   }catch(e){$("camHint").textContent="Camera unavailable — type or paste below";}
 }
+$("startCam").onclick=()=>startCam();
 $("flip").onclick=()=>{facing=facing==="environment"?"user":"environment";startCam();};
-startCam();
 
 /* OCR */
 $("snap").onclick=async()=>{
@@ -211,7 +214,7 @@ $("snap").onclick=async()=>{
   const v=$("preview"),c=$("canvas");c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d").drawImage(v,0,0);
   $("snap").disabled=true;$("status").textContent="Reading label…";setProg($("prog"),5);
   try{
-    const{data}=await Tesseract.recognize(c,"eng",{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
+    const{data}=await Tesseract.recognize(c,"eng+ara+urd+fra+spa",{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
     setProg($("prog"),-1);$("status").textContent="";
     const txt=data.text.trim();
     if(!txt){toast("Couldn't read the label — try again or type it");$("snap").disabled=false;return;}
@@ -305,6 +308,11 @@ $("draftBtn").onclick=async()=>{
   }catch(e){}
   if(!draft){draft=`Dear ${prod||"Customer Support"} team,\n\nI am writing to ask about the source of an ingredient in your product${prod?` (${prod})`:""}. Specifically, I would like to know the origin of: ${ing}.\n\nAs I follow a halal diet, I need to confirm whether this ingredient is derived from animal, plant, or synthetic/microbial sources, and if animal-derived, whether it meets halal requirements. If you hold any halal certification for this product, I would appreciate those details as well.\n\nThank you for your time and assistance.\n\nKind regards,`;}
   $("emBody").value=draft;setProg($("emProg"),-1);$("draftBtn").disabled=false;toast("Draft ready — review and add emails");
+};
+$("findEmailBtn").onclick=()=>{
+  const prod=$("emProduct").value.trim();
+  if(!prod){toast("Enter a product or brand first");return;}
+  window.open(`https://www.google.com/search?q=${encodeURIComponent(prod+" customer service email")}`,"_blank");
 };
 $("sendBtn").onclick=()=>{
   const to=$("emTo").value.trim(),from=$("emFrom").value.trim(),prod=$("emProduct").value.trim();
