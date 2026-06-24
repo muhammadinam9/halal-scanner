@@ -453,11 +453,20 @@ $("scanBarcode").onclick=async()=>{
   $("camWrap").style.display="";
   $("scanLabel").style.display="none";$("scanBarcode").style.display="none";$("cancelBarcode").style.display="";
   $("camHint").textContent="Point the camera at the barcode";
-  if(!codeReader)codeReader=new ZXing.BrowserMultiFormatReader();
+  if(!codeReader){
+    const hints=new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
+      ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,
+      ZXing.BarcodeFormat.UPC_E,ZXing.BarcodeFormat.CODE_128,ZXing.BarcodeFormat.CODE_39
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+    codeReader=new ZXing.BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:100});
+  }
   barcodeActive=true;
   const onResult=(result)=>{if(result&&barcodeActive){const code=result.getText();stopBarcode();lookupBarcode(code);}};
+  const constraints={video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}};
   try{
-    await codeReader.decodeFromConstraints({video:{facingMode:{ideal:"environment"}}},$("preview"),onResult);
+    await codeReader.decodeFromConstraints(constraints,$("preview"),onResult);
   }catch(e){
     try{ await codeReader.decodeFromVideoDevice(undefined,$("preview"),onResult); }   // fallback to default camera
     catch(e2){
