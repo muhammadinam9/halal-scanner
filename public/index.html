@@ -455,11 +455,18 @@ $("scanBarcode").onclick=async()=>{
   $("camHint").textContent="Point the camera at the barcode";
   if(!codeReader)codeReader=new ZXing.BrowserMultiFormatReader();
   barcodeActive=true;
+  const onResult=(result)=>{if(result&&barcodeActive){const code=result.getText();stopBarcode();lookupBarcode(code);}};
   try{
-    await codeReader.decodeFromConstraints({video:{facingMode:"environment"}},$("preview"),(result)=>{
-      if(result&&barcodeActive){const code=result.getText();stopBarcode();lookupBarcode(code);}
-    });
-  }catch(e){toast("Camera unavailable for barcode scanning");stopBarcode();}
+    await codeReader.decodeFromConstraints({video:{facingMode:{ideal:"environment"}}},$("preview"),onResult);
+  }catch(e){
+    try{ await codeReader.decodeFromVideoDevice(undefined,$("preview"),onResult); }   // fallback to default camera
+    catch(e2){
+      const why=(e2&&e2.name)||(e&&e.name)||"unknown";
+      toast(why==="NotAllowedError"?"Camera permission denied — allow it in your browser settings"
+        :"Camera unavailable ("+why+"). Open the site in Safari or Chrome, not an in-app browser.");
+      stopBarcode();
+    }
+  }
 };
 $("cancelBarcode").onclick=()=>stopBarcode();
 
@@ -730,7 +737,9 @@ $("ctSend").onclick=()=>{
   const subj=`Halal Scanner — message from ${name||"a user"}`;
   let body=msg;
   if(name||email)body+=`\n\n— ${name}${email?` (${email})`:""}`;
-  window.location.href=`mailto:muhammadinam9@gmail.com?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const url=`mailto:muhammadinam9@gmail.com?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const a=document.createElement("a");a.href=url;a.style.display="none";document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>toast("Opening your email app… if nothing opens, email muhammadinam9@gmail.com directly"),400);
 };
 </script>
 </body>
