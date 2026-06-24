@@ -49,36 +49,62 @@ const SEED = {
   "potassium sorbate":"h", "sodium benzoate":"h", "calcium carbonate":"h", e202:"h", e211:"h"
 };
 
+/* Plain-English reasons for why each seeded doubtful (d) ingredient is source-dependent. */
+const REASONS = {
+  gelatin:"often derived from pork or non-halal animals", gelatine:"often derived from pork or non-halal animals", e441:"gelatin-based, often from pork or non-halal animals",
+  "mono- and diglycerides":"can be made from animal or plant fat", monoglycerides:"can be made from animal or plant fat", diglycerides:"can be made from animal or plant fat", e471:"can be made from animal or plant fat",
+  glycerin:"can be animal or vegetable derived", glycerine:"can be animal or vegetable derived", glycerol:"can be animal or vegetable derived", e422:"can be animal or vegetable derived",
+  rennet:"often sourced from non-halal animal stomachs",
+  enzymes:"may come from animal, plant, or microbial sources", enzyme:"may come from animal, plant, or microbial sources", lipase:"may come from animal, plant, or microbial sources", pepsin:"often derived from non-halal animal sources",
+  "l-cysteine":"may be derived from human hair or animal feathers", e920:"may be derived from human hair or animal feathers",
+  "natural flavor":"source not specified, may be animal-derived", "natural flavors":"source not specified, may be animal-derived", "natural flavour":"source not specified, may be animal-derived", flavoring:"source not specified, may be animal-derived",
+  shortening:"may contain animal-derived fat", emulsifier:"may be animal or plant derived",
+  "stearic acid":"can be animal or vegetable sourced", e570:"can be animal or vegetable sourced", "magnesium stearate":"can be animal or vegetable sourced", stearate:"can be animal or vegetable sourced", e472:"can be animal or vegetable sourced",
+  lecithin:"usually soy but can be egg or animal derived",
+  whey:"may use rennet from non-halal animal sources",
+  "vanilla extract":"may contain alcohol as a solvent",
+  tallow:"rendered animal fat, may be non-halal", "animal fat":"rendered animal fat, may be non-halal"
+};
+
 async function initDb() {
   if (!DATABASE_URL) return;
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ingredients (
       name   TEXT PRIMARY KEY,
       status CHAR(1) NOT NULL CHECK (status IN ('h','x','d')),
+      reason TEXT,
       source TEXT DEFAULT 'seed',
       added  TIMESTAMPTZ DEFAULT now()
     );
   `);
+  // For databases created before the reason column existed.
+  await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS reason TEXT");
+
   const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM ingredients");
   if (rows[0].n === 0) {
     const keys = Object.keys(SEED);
-    const values = keys.map((k, i) => `($${i*2+1}, $${i*2+2}, 'seed')`).join(",");
-    const params = keys.flatMap(k => [k, SEED[k]]);
+    const values = keys.map((k, i) => `($${i*3+1}, $${i*3+2}, $${i*3+3}, 'seed')`).join(",");
+    const params = keys.flatMap(k => [k, SEED[k], REASONS[k] || null]);
     await pool.query(
-      `INSERT INTO ingredients(name,status,source) VALUES ${values} ON CONFLICT DO NOTHING`,
+      `INSERT INTO ingredients(name,status,reason,source) VALUES ${values} ON CONFLICT DO NOTHING`,
       params
     );
     console.log(`Seeded ${keys.length} ingredients.`);
+  }
+
+  // Backfill reasons for doubtful items seeded before this column existed.
+  for (const [name, reason] of Object.entries(REASONS)) {
+    await pool.query("UPDATE ingredients SET reason = $2 WHERE name = $1 AND reason IS NULL", [name, reason]);
   }
 }
 
 /* ---------- API: get full library ---------- */
 app.get("/api/ingredients", async (_req, res) => {
   try {
-    const { rows } = await pool.query("SELECT name,status FROM ingredients ORDER BY name");
-    const map = {};
-    rows.forEach(r => map[r.name] = r.status);
-    res.json(map);
+    const { rows } = await pool.query("SELECT name,status,reason FROM ingredients ORDER BY name");
+    const items = {}, reasons = {};
+    rows.forEach(r => { items[r.name] = r.status; if (r.reason) reasons[r.name] = r.reason; });
+    res.json({ items, reasons });
   } catch (e) {
     res.status(500).json({ error: "db_error", detail: String(e.message) });
   }
@@ -90,10 +116,11 @@ app.post("/api/ingredients", async (req, res) => {
     const items = req.body.items || [];
     for (const it of items) {
       if (!it.name || !["h","x","d"].includes(it.status)) continue;
+      const reason = it.status === "d" ? (it.reason || null) : null;
       await pool.query(
-        `INSERT INTO ingredients(name,status,source) VALUES ($1,$2,'ai')
-         ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status`,
-        [it.name.toLowerCase().trim(), it.status]
+        `INSERT INTO ingredients(name,status,reason,source) VALUES ($1,$2,$3,'ai')
+         ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason`,
+        [it.name.toLowerCase().trim(), it.status, reason]
       );
     }
     res.json({ ok: true, saved: items.length });
@@ -115,8 +142,11 @@ For each ingredient return a status:
 - "x" = haram (e.g. pork derivatives, intoxicating alcohol, blood, carmine)
 - "d" = doubtful / mashbooh (source-dependent: animal, plant, or microbial — needs verification)
 Be conservative: if permissibility depends on the source, mark "d".
+For status "d" ONLY, add a "reason": one short plain-English sentence (under 15 words)
+explaining why it is source-dependent, e.g. "can be made from animal or plant fat".
+For "h" and "x", set "reason" to "".
 Return ONLY a JSON array, no prose, no markdown:
-[{"name":"<exact name as given>","status":"h|x|d"}]
+[{"name":"<exact name as given>","status":"h|x|d","reason":"<short reason if d, else empty>"}]
 Ingredients: ${JSON.stringify(names)}`;
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {

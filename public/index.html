@@ -67,6 +67,8 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
 .chip.d .dot{background:var(--amber)}
 .chip.u .dot{background:#888}
 .chip small{opacity:.6;font-weight:500}
+.chipwrap{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.rsn{font-size:11px;line-height:1.3;color:#9a7b1f;max-width:240px;padding-left:3px;font-weight:500}
 .dbrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:#fbf9f2}
 .dbrow .dot{width:11px;height:11px;border-radius:50%;flex:none}
 .dbrow .nm{font-size:13.5px;font-weight:600;text-transform:capitalize;flex:1}
@@ -174,7 +176,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
 
 <script>
 const LABELS={h:{t:"Halal",cls:"h"},x:{t:"Haram",cls:"x"},d:{t:"Doubtful",cls:"d"},u:{t:"Unknown",cls:"u"}};
-let DB={}, stream=null, facing="environment", ocrLang="eng";
+let DB={}, REASONS={}, stream=null, facing="environment", ocrLang="eng";
 const $=id=>document.getElementById(id);
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._);t._=setTimeout(()=>t.classList.remove("on"),2400);}
 function setProg(el,p){el.classList.toggle("on",p>=0);if(p>=0)el.querySelector("i").style.width=p+"%";}
@@ -182,8 +184,8 @@ function escape(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 
 /* load library from server */
 async function loadDb(){
-  try{const r=await fetch("/api/ingredients");DB=await r.json();}
-  catch(e){DB={};toast("Couldn't load library from server");}
+  try{const r=await fetch("/api/ingredients");const j=await r.json();DB=j.items||{};REASONS=j.reasons||{};}
+  catch(e){DB={};REASONS={};toast("Couldn't load library from server");}
 }
 loadDb();
 
@@ -236,9 +238,12 @@ function isolateIngredients(raw){
   if(m)t=t.slice(0,m.index);
   return t;
 }
+/* Category headers and connective words that aren't real ingredients. */
+const CATEGORY=new Set(["leavening","gums","gum","preservative","preservatives","concentrate","the following","and the following","contains"]);
 /* Reject tokens that are clearly not ingredients (addresses, URLs, numbers, noise). */
 function isJunk(t){
   if(t.length<3)return true;                                   // 1–2 letter noise
+  if(CATEGORY.has(t))return true;                              // standalone category word
   if(/©|\.com|www|http/.test(t))return true;                   // website / copyright
   if(/\b(inc|llc|ltd|usa|co|reserved|rights|distributed|manufactured|stamp|please|call)\b/.test(t))return true;
   if(/\b\d{5}\b/.test(t))return true;                          // ZIP code
@@ -250,7 +255,7 @@ function parseIngredients(raw){
   // 1) isolate the ingredients section, 2) turn parentheses into separators so
   // "leavening (sodium acid pyrophosphate, baking soda)" splits into its sub-items.
   let s=isolateIngredients(raw).toLowerCase().replace(/[()[\]{}]/g,",");
-  let parts=s.split(/[,;•\n·]|\.\s/).map(x=>x.replace(/["*]/g,"").replace(/\s+/g," ").trim());
+  let parts=s.split(/[,;•\n·]|\.\s/).map(x=>x.replace(/["*|]/g," ").replace(/^[^a-z]+/,"").replace(/[^a-z)]+$/,"").replace(/\s+/g," ").trim());
   parts=parts.filter(x=>x.length<48&&!isJunk(x));
   return [...new Set(parts)];
 }
@@ -275,7 +280,7 @@ async function runCheck(raw){
       const r=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({names:unknowns.map(u=>u.name)})});
       if(r.ok){
         const d=await r.json();
-        (d.results||[]).forEach(a=>{const row=results.find(x=>x.name===a.name);if(row&&["h","x","d"].includes(a.status)){row.status=a.status;DB[row.name]=a.status;}});
+        (d.results||[]).forEach(a=>{const row=results.find(x=>x.name===a.name);if(row&&["h","x","d"].includes(a.status)){row.status=a.status;DB[row.name]=a.status;if(a.status==="d"&&a.reason){row.reason=a.reason;REASONS[row.name]=a.reason;}}});
         // save learned ones back to DB
         const learned=results.filter(r=>unknowns.find(u=>u.name===r.name)&&r.status!=="u");
         if(learned.length){fetch("/api/ingredients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:learned})});}
@@ -291,7 +296,13 @@ function renderResult(results){
   const chips=$("chips");chips.innerHTML="";
   const order={h:0,d:1,x:2,u:3};
   const sorted=[...results].sort((a,b)=>order[a.status]-order[b.status]);
-  sorted.forEach(r=>{const L=LABELS[r.status];const c=document.createElement("div");c.className="chip "+L.cls;c.innerHTML=`<span class="dot"></span>${escape(r.name)} <small>${L.t}</small>`;chips.appendChild(c);});
+  sorted.forEach(r=>{const L=LABELS[r.status];
+    const wrap=document.createElement("div");wrap.className="chipwrap";
+    const c=document.createElement("div");c.className="chip "+L.cls;c.innerHTML=`<span class="dot"></span>${escape(r.name)} <small>${L.t}</small>`;
+    wrap.appendChild(c);
+    const reason=r.status==="d"?(r.reason||REASONS[r.name]):"";
+    if(reason){const rs=document.createElement("div");rs.className="rsn";rs.textContent=reason;wrap.appendChild(rs);}
+    chips.appendChild(wrap);});
   $("resultCard").style.display="block";
   const hasHaram=results.some(r=>r.status==="x"),hasDoubt=results.some(r=>r.status==="d"),hasUnknown=results.some(r=>r.status==="u");
   const v=$("verdict");v.className="verdict on";
