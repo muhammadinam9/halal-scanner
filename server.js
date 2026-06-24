@@ -170,6 +170,52 @@ app.get("/api/ingredient/:name", async (req, res) => {
   }
 });
 
+/* ---------- API: fill in a missing description/sources for one ingredient (AI, then cache) ---------- */
+app.post("/api/enrich-ingredient", async (req, res) => {
+  if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: "no_api_key" });
+  const name = String(req.body.name || "").toLowerCase().trim();
+  if (!name) return res.status(400).json({ error: "bad_request" });
+  const lang = normLang(req.body.lang);
+  try {
+    const cur = await pool.query("SELECT status,reason,description,sources,i18n FROM ingredients WHERE name = $1", [name]);
+    const row = cur.rows[0];
+    const langLine = lang === "en" ? "" : `Write the "description" and "sources" in ${langName(lang)}.\n`;
+    const prompt =
+`For the single food/cosmetic ingredient "${name}", return:
+- "description": one short plain-English sentence saying what it is.
+- "sources": one short sentence on where it typically comes from (animal, plant, synthetic, or microbial).
+${langLine}Return ONLY a JSON object, no prose, no markdown:
+{"description":"...","sources":"..."}`;
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01" },
+      body: JSON.stringify({ model: MODEL, max_tokens: 300, messages: [{ role:"user", content: prompt }] }),
+    });
+    if (!r.ok) return res.status(502).json({ error: "claude_error", status: r.status });
+    const d = await r.json();
+    let txt = d.content.filter(c => c.type === "text").map(c => c.text).join("\n").replace(/```json|```/g,"").trim();
+    const obj = JSON.parse(txt);
+    const description = obj.description ? String(obj.description).trim() : null;
+    const sources = obj.sources ? String(obj.sources).trim() : null;
+
+    if (row) {
+      // Merge into i18n (preserving any existing reason for this language) and the base columns.
+      const i18n = row.i18n || {};
+      i18n[lang] = { ...(i18n[lang] || {}), description, sources };
+      const baseDesc = lang === "en" ? (description || row.description) : row.description;
+      const baseSrc  = lang === "en" ? (sources || row.sources) : row.sources;
+      // Only fills description/sources — never touches status or reason, so admin corrections stay intact.
+      await pool.query(
+        "UPDATE ingredients SET description = $2, sources = $3, i18n = $4::jsonb WHERE name = $1",
+        [name, baseDesc, baseSrc, JSON.stringify(i18n)]
+      );
+    }
+    res.json({ name, description, sources });
+  } catch (e) {
+    res.status(500).json({ error: "enrich_failed", detail: String(e.message) });
+  }
+});
+
 /* ---------- API: save learned ingredients ---------- */
 app.post("/api/ingredients", async (req, res) => {
   try {
@@ -218,6 +264,21 @@ app.post("/api/ingredients/update", async (req, res) => {
       [nm, status, rsn]
     );
     res.json({ ok: true, name: nm, status, reason: rsn });
+  } catch (e) {
+    res.status(500).json({ error: "db_error", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: admin delete an ingredient (password-protected) ---------- */
+app.post("/api/ingredients/delete", async (req, res) => {
+  const { password, name } = req.body || {};
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: "admin_disabled" });
+  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: "unauthorized" });
+  if (!name) return res.status(400).json({ error: "bad_request" });
+  try {
+    const nm = String(name).toLowerCase().trim();
+    const r = await pool.query("DELETE FROM ingredients WHERE name = $1", [nm]);
+    res.json({ ok: true, deleted: r.rowCount });
   } catch (e) {
     res.status(500).json({ error: "db_error", detail: String(e.message) });
   }

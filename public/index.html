@@ -300,6 +300,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
       <button class="btn btn-ghost" id="editCancel">Cancel</button>
       <button class="btn btn-primary" id="editSave">Save</button>
     </div>
+    <button class="btn btn-ghost" id="editDelete" style="margin-top:9px;color:var(--red);border-color:rgba(178,59,59,.4)">🗑 Delete from library</button>
     <div class="mini" id="editMsg"></div>
   </div>
 </div>
@@ -617,11 +618,27 @@ async function openDetail(item){
       const r=await fetch("/api/ingredient/"+encodeURIComponent(name)+"?lang="+encodeURIComponent(lang));
       if(r.ok){const d=await r.json();
         if(d.found&&detailName===name){
-          DETAILS[name]={description:d.description||null,sources:d.sources||null,reason:d.reason||null};
-          fillDetail(DETAILS[name],d.status||status);
+          det={description:d.description||null,sources:d.sources||null,reason:d.reason||REASONS[name]||null};
+          DETAILS[name]=det;
+          fillDetail(det,d.status||status);
         }
       }
     }catch(e){}
+  }
+  // Still missing? Ask the AI to fill it in, then cache it for next time.
+  if((det.description==null||det.sources==null)&&detailName===name){
+    if(det.description==null)$("dDesc").textContent="Generating…";
+    if(det.sources==null)$("dSrc").textContent="Generating…";
+    try{
+      const r=await fetch("/api/enrich-ingredient",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,lang})});
+      if(r.ok){const d=await r.json();
+        if(detailName===name){
+          det={description:det.description||d.description||null,sources:det.sources||d.sources||null,reason:det.reason};
+          DETAILS[name]=det;
+          fillDetail(det,status);
+        }
+      }else if(detailName===name){fillDetail(det,status);}
+    }catch(e){if(detailName===name)fillDetail(det,status);}
   }
 }
 $("dClose").onclick=()=>$("detailWrap").classList.remove("on");
@@ -709,6 +726,23 @@ $("editSave").onclick=async()=>{
     toast("Saved “"+editName+"”");
     renderDb();
   }catch(e){$("editMsg").textContent="Network error — try again.";$("editSave").disabled=false;}
+};
+$("editDelete").onclick=async()=>{
+  const pass=$("editPass").value||adminPass;
+  if(!pass){$("editMsg").textContent="Enter the admin password.";return;}
+  if(!confirm(`Delete "${editName}" from the library? This cannot be undone.`))return;
+  $("editDelete").disabled=true;$("editMsg").textContent="Deleting…";
+  try{
+    const r=await fetch("/api/ingredients/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pass,name:editName})});
+    if(r.status===401){$("editMsg").textContent="Wrong password.";$("editDelete").disabled=false;return;}
+    if(r.status===503){$("editMsg").textContent="Admin editing is disabled on the server.";$("editDelete").disabled=false;return;}
+    if(!r.ok){$("editMsg").textContent="Delete failed — try again.";$("editDelete").disabled=false;return;}
+    adminPass=pass;
+    delete DB[editName];delete REASONS[editName];delete DETAILS[editName];
+    $("editModal").classList.remove("on");$("editDelete").disabled=false;
+    toast("Deleted “"+editName+"”");
+    renderDb();
+  }catch(e){$("editMsg").textContent="Network error — try again.";$("editDelete").disabled=false;}
 };
 
 /* email */
