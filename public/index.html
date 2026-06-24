@@ -346,7 +346,7 @@ function statusWord(s){return (VERDICT_WORDS[lang]||VERDICT_WORDS.en)[s]||(LABEL
 const $=id=>document.getElementById(id);
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._);t._=setTimeout(()=>t.classList.remove("on"),2400);}
 function setProg(el,p){el.classList.toggle("on",p>=0);if(p>=0)el.querySelector("i").style.width=p+"%";}
-function escape(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function escape(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 
 /* load library from server */
 async function loadDb(){
@@ -357,11 +357,15 @@ loadDb();
 
 /* interface/reply language switcher */
 $("langSel").value=lang;
+document.documentElement.lang=lang;
+document.documentElement.dir=(lang==="ar"||lang==="ur")?"rtl":"ltr";   // apply saved direction on load
 $("langSel").onchange=()=>{
   lang=$("langSel").value;
   try{localStorage.setItem("halalScanner.lang",lang);}catch(e){}
   DETAILS={};                         // cached details were in the old language
   loadDb();                           // reload reason text in the new language
+  document.documentElement.lang=lang;
+  document.documentElement.dir=(lang==="ar"||lang==="ur")?"rtl":"ltr";   // Arabic AND Urdu are RTL
   toast("Language set — applies to new scans");
 };
 
@@ -506,7 +510,7 @@ function isolateIngredients(raw){
   let t=raw.replace(/\r/g,"\n");
   const start=/ingredient[s]?\b/i.exec(t);
   if(start)t=t.slice(start.index+start[0].length).replace(/^\s*[:\-–]\s*/,"");
-  const stop=/\bcontains\b(?!\s*\d)|©|\bwww|\.com\b|https?:\/\//i;
+  const stop=/^\s*contains\s*:|©|\bwww\b|\.com\b|https?:\/\//im;
   const m=stop.exec(t);
   if(m)t=t.slice(0,m.index);
   return t;
@@ -520,7 +524,7 @@ function isJunk(t){
   if(/©|\.com|www|http/.test(t))return true;                   // website / copyright
   if(/\b(inc|llc|ltd|usa|co|reserved|rights|distributed|manufactured|stamp|please|call)\b/.test(t))return true;
   if(/\b\d{5}\b/.test(t))return true;                          // ZIP code
-  if(/\d/.test(t))return true;                                 // any digits (nutrition %, "tx 75038")
+  if(/^\d+$/.test(t))return true;                              // pure numbers only (e.g. "296"); keeps E-numbers like "e471"
   if(!/[a-z]{3,}/.test(t))return true;                         // no real word
   return false;
 }
@@ -528,7 +532,7 @@ function parseIngredients(raw){
   // 1) isolate the ingredients section, 2) turn parentheses into separators so
   // "leavening (sodium acid pyrophosphate, baking soda)" splits into its sub-items.
   let s=isolateIngredients(raw).toLowerCase().replace(/[()[\]{}]/g,",");
-  let parts=s.split(/[,;•\n·]|\.\s/).map(x=>x.replace(/["*|]/g," ").replace(/^[^a-z]+/,"").replace(/[^a-z)]+$/,"").replace(/\s+/g," ").trim());
+  let parts=s.split(/[,;•\n·]|\.\s/).map(x=>x.replace(/["*|]/g," ").replace(/^[^a-z]+/,"").replace(/[^a-z]+$/,"").replace(/\s+/g," ").trim());
   parts=parts.filter(x=>x.length<48&&!isJunk(x));
   return [...new Set(parts)];
 }

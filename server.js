@@ -360,7 +360,7 @@ app.post("/api/scan", async (req, res) => {
   const hash = crypto.createHash("sha256").update(norm).digest("hex");
   try {
     // 1) Whole-product cache — a repeat scan of the same label is free (no AI call).
-    const hit = await pool.query("SELECT results FROM product_cache WHERE hash = $1 AND lang = $2", [hash, lang]);
+    const hit = await pool.query("SELECT results FROM product_cache WHERE hash = $1 AND lang = $2 AND added > now() - interval '90 days'", [hash, lang]);
     let results, cached = false;
     if (hit.rows.length) {
       results = hit.rows[0].results || [];
@@ -395,7 +395,7 @@ ${text}
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role:"user", content: prompt }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 4000, messages: [{ role:"user", content: prompt }] }),
       });
       if (!r.ok) return res.status(502).json({ error: "claude_error", status: r.status });
       const d = await r.json();
