@@ -140,7 +140,7 @@ async function initDb() {
 }
 
 /* ---------- API: get full library ---------- */
-app.get("/api/ingredients", async (_req, res) => {
+app.get("/api/ingredients", async (req, res) => {
   try {
     const lang = normLang(req.query.lang);
     const { rows } = await pool.query("SELECT name,status,reason,description,sources,i18n FROM ingredients ORDER BY name");
