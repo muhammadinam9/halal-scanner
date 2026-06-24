@@ -778,23 +778,15 @@ $("sendBtn").onclick=()=>{
 };
 
 /* Contact us — opens the user's own email app (mailto; no SMTP, no credentials) */
-$("ctSend").onclick=async()=>{
+$("ctSend").onclick=()=>{
   const name=$("ctName").value.trim(),email=$("ctEmail").value.trim(),msg=$("ctMsg").value.trim();
   if(!msg){toast("Please write a message first");return;}
-  const btn=$("ctSend"),label=btn.textContent;
-  btn.disabled=true;btn.textContent="Sending…";
-  try{
-    const r=await fetch("/api/contact",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,email,message:msg})});
-    if(r.ok){
-      toast("Message sent — thank you!");
-      $("ctName").value="";$("ctEmail").value="";$("ctMsg").value="";
-    }else if(r.status===503){
-      toast("Email isn't set up yet — please email muhammadinam9@gmail.com directly");
-    }else{
-      toast("Couldn't send — please email muhammadinam9@gmail.com directly");
-    }
-  }catch(e){toast("Network error — please email muhammadinam9@gmail.com directly");}
-  btn.disabled=false;btn.textContent=label;
+  const subj=`Halal Scanner — message from ${name||"a user"}`;
+  let body=msg;
+  if(name||email)body+=`\n\n— ${name}${email?` (${email})`:""}`;
+  const url=`mailto:muhammadinam9@gmail.com?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const a=document.createElement("a");a.href=url;a.style.display="none";document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>toast("Opening your email app… if nothing opens, email muhammadinam9@gmail.com directly"),400);
 };
 </script>
 </body>
