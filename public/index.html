@@ -3,7 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Halal Scanner</title>
+<title>Halal Scanner — Check Food Ingredients Against Islamic Dietary Law</title>
+<meta name="description" content="Scan food ingredient labels or barcodes to check if a product is halal, haram, or doubtful. Free Muslim food ingredient checker with plain-English reasons.">
+<meta name="keywords" content="halal scanner, halal checker, ingredient scanner, is this halal, halal food app, haram ingredients, muslim food">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://halal-scanner-z8nr.onrender.com/">
+<!-- Open Graph -->
+<meta property="og:title" content="Halal Scanner — Check Food Ingredients Against Islamic Dietary Law">
+<meta property="og:description" content="Scan ingredient labels or barcodes to instantly check if a product is halal, haram, or doubtful. Free Muslim food ingredient checker.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://halal-scanner-z8nr.onrender.com/">
+<meta property="og:image" content="https://halal-scanner-z8nr.onrender.com/og-image.png">
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Halal Scanner — Check Food Ingredients Against Islamic Dietary Law">
+<meta name="twitter:description" content="Scan ingredient labels or barcodes to check halal, haram, or doubtful status. Free Muslim food ingredient checker.">
+<meta name="twitter:image" content="https://halal-scanner-z8nr.onrender.com/og-image.png">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/cropperjs@1.6.2/dist/cropper.min.css">
@@ -46,6 +61,10 @@ main{flex:1;padding:18px 16px 90px}
 .btn-row{display:flex;gap:9px}
 .scan-opt{margin-bottom:13px}
 .opt-help{font-size:11.5px;opacity:.65;text-align:center;margin-top:6px;line-height:1.4}
+.about{max-width:560px;margin:0 auto;padding:6px 20px 40px;color:var(--ink);opacity:.6;font-size:12px;line-height:1.6}
+.about h2{font-size:14px;margin:0 0 6px;opacity:.95}
+.about h3{font-size:12.5px;margin:14px 0 4px;opacity:.95}
+.about p{margin:0 0 8px}
 .btn-row .btn{margin:0}
 .btn[disabled]{opacity:.5;pointer-events:none}
 textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);resize:vertical;min-height:90px;line-height:1.5}
@@ -220,6 +239,13 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
       </div>
     </section>
   </main>
+  <footer class="about">
+    <h2>About Halal Scanner</h2>
+    <p>Halal Scanner is a free tool that helps Muslims check whether a food or cosmetic product is permissible to consume. Scan a product's ingredient label with your phone camera, scan its barcode, or paste the ingredients, and the app screens every ingredient against Islamic dietary law — labelling each one halal, haram, or doubtful (mashbooh) with a short, plain-English reason for anything that needs verifying.</p>
+    <h3>Key features</h3>
+    <p>Scan printed ingredient labels using on-device text recognition; look up packaged products instantly by barcode; get a clear halal, haram, or doubtful verdict for every ingredient; tap any ingredient to see what it is and its common sources; and read the explanations in multiple languages, including English, Urdu, Hindi, and Arabic.</p>
+    <p>It is built for Muslim shoppers, parents, and anyone following a halal diet who wants a quick second opinion while shopping. Halal Scanner is an ingredient-screening aid for your own research — it is not a fatwa or a halal certification. Always verify with the manufacturer and rely on recognized halal certification before consuming.</p>
+  </footer>
 </div>
 <div class="toast" id="toast"></div>
 <div class="overlay" id="disclaimerModal" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
