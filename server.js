@@ -111,6 +111,16 @@ async function initDb() {
     );
   `);
 
+  // Anonymous usage log — NO IP or personal data, only recognized ingredient names.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scan_logs (
+      id               SERIAL PRIMARY KEY,
+      scanned_at       TIMESTAMPTZ DEFAULT now(),
+      ingredient_count INT,
+      ingredients_text TEXT
+    );
+  `);
+
   const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM ingredients");
   if (rows[0].n === 0) {
     const keys = Object.keys(SEED);
@@ -378,9 +388,45 @@ ${text}
       }
     }
 
+    // Anonymous log: only the recognized ingredient names + count (never raw OCR text or IPs).
+    if (results.length) {
+      try {
+        await pool.query(
+          "INSERT INTO scan_logs(ingredient_count, ingredients_text) VALUES ($1, $2)",
+          [results.length, results.map(r => r.name).join(", ")]
+        );
+      } catch (e) { /* logging must never break a scan */ }
+    }
+
     res.json({ results, cached });
   } catch (e) {
     res.status(500).json({ error: "scan_failed", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: admin anonymous usage stats (password-protected) ---------- */
+app.get("/api/stats", async (req, res) => {
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: "admin_disabled" });
+  if (req.query.password !== ADMIN_PASSWORD) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const total = await pool.query("SELECT COUNT(*)::int AS n FROM scan_logs");
+    const week = await pool.query("SELECT COUNT(*)::int AS n FROM scan_logs WHERE scanned_at >= now() - interval '7 days'");
+    // Split each log's comma-separated names into rows, then count how often each appears.
+    const top = await pool.query(`
+      SELECT trim(both ' ' from ing) AS name, COUNT(*)::int AS count
+      FROM scan_logs, LATERAL unnest(string_to_array(ingredients_text, ',')) AS ing
+      WHERE ingredients_text IS NOT NULL AND trim(both ' ' from ing) <> ''
+      GROUP BY 1
+      ORDER BY count DESC, name
+      LIMIT 20;
+    `);
+    res.json({
+      totalScans: total.rows[0].n,
+      last7Days: week.rows[0].n,
+      topIngredients: top.rows,
+    });
+  } catch (e) {
+    res.status(500).json({ error: "stats_failed", detail: String(e.message) });
   }
 });
 

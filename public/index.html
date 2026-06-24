@@ -213,6 +213,13 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <div class="count" id="dbCount"></div>
         <div id="dbList"></div>
       </div>
+      <div class="card">
+        <h2>Admin stats</h2>
+        <p class="sub">Anonymous usage totals — no IP or personal data is stored. Requires the admin password.</p>
+        <input type="password" id="statsPass" placeholder="Admin password" autocomplete="off">
+        <button class="btn btn-ghost" id="statsBtn">📊 View stats</button>
+        <div id="statsOut" class="mini" style="margin-top:10px"></div>
+      </div>
     </section>
     <section class="view" id="v-email">
       <div class="banner">For doubtful ingredients, the safest path is to confirm the source directly with the manufacturer. Draft a question below, add the company's email, and send it from your own mail app.</div>
@@ -604,6 +611,26 @@ function renderDb(){
     list.appendChild(row);});
 }
 $("search").oninput=()=>renderDb();
+
+/* admin anonymous usage stats */
+$("statsBtn").onclick=async()=>{
+  const pass=$("statsPass").value||adminPass;
+  if(!pass){$("statsOut").textContent="Enter the admin password.";return;}
+  $("statsOut").textContent="Loading…";
+  try{
+    const r=await fetch("/api/stats?password="+encodeURIComponent(pass));
+    if(r.status===401){$("statsOut").textContent="Wrong password.";return;}
+    if(r.status===503){$("statsOut").textContent="Stats disabled — no ADMIN_PASSWORD set on the server.";return;}
+    if(!r.ok){$("statsOut").textContent="Couldn't load stats.";return;}
+    adminPass=pass;
+    const d=await r.json();
+    const top=(d.topIngredients||[]).map((t,i)=>`${i+1}. ${escape(t.name)} — ${t.count}`).join("<br>");
+    $("statsOut").innerHTML=`<div style="text-align:left;line-height:1.7">
+      <b>Total scans:</b> ${d.totalScans}<br>
+      <b>Scans in last 7 days:</b> ${d.last7Days}<br><br>
+      <b>Top 20 scanned ingredients:</b><br>${top||"—"}</div>`;
+  }catch(e){$("statsOut").textContent="Network error.";}
+};
 
 /* admin manual correction */
 let editName=null,editStatus="h",adminPass="";
