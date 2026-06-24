@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Halal Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{
+  --ink:#0e2a25;--paper:#f3efe4;--paper-2:#ece6d6;--green:#1f7a5a;--green-deep:#0f5c41;
+  --gold:#c9a24b;--amber:#c98a2b;--red:#b23b3b;--line:rgba(14,42,37,.14);--shadow:0 8px 30px rgba(14,42,37,.12);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased}
+.app{max-width:560px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative}
+header{padding:18px 20px 14px;background:linear-gradient(160deg,var(--green-deep),var(--green));color:#f6f3ea;border-bottom-left-radius:22px;border-bottom-right-radius:22px;box-shadow:var(--shadow);position:sticky;top:0;z-index:30}
+.brand{display:flex;align-items:center;gap:11px}
+.mark{width:38px;height:38px;border-radius:11px;flex:none;background:radial-gradient(circle at 32% 30%,#fff5d8,var(--gold));display:flex;align-items:center;justify-content:center;font-size:21px;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35)}
+.brand h1{font-size:19px;margin:0;letter-spacing:-.3px;font-weight:700}
+.brand p{margin:1px 0 0;font-size:12px;opacity:.82;font-weight:500}
+nav{display:flex;gap:6px;margin-top:14px}
+nav button{flex:1;border:0;background:rgba(255,255,255,.13);color:#f6f3ea;padding:9px 4px;border-radius:11px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.18s;letter-spacing:.2px}
+nav button.on{background:#f6f3ea;color:var(--green-deep)}
+main{flex:1;padding:18px 16px 90px}
+.view{display:none;animation:fade .25s ease}
+.view.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.card{background:var(--paper-2);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(14,42,37,.05)}
+.card h2{margin:0 0 4px;font-size:15px;letter-spacing:-.2px}
+.card .sub{margin:0 0 13px;font-size:12.5px;opacity:.7;line-height:1.5}
+#preview{width:100%;border-radius:14px;display:block;background:#0e2a25;aspect-ratio:4/3;object-fit:cover}
+.cam-wrap{position:relative}
+.cam-frame{position:absolute;inset:14px;border:2px dashed rgba(255,255,255,.5);border-radius:12px;pointer-events:none}
+.hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:#fff;font-size:11.5px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.btn{width:100%;border:0;border-radius:13px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:active{transform:scale(.985)}
+.btn-primary{background:var(--green);color:#fff;box-shadow:0 6px 16px rgba(31,122,90,.3)}
+.btn-gold{background:var(--gold);color:#3a2c08}
+.btn-ghost{background:transparent;color:var(--green-deep);border:1.5px solid var(--line)}
+.btn-row{display:flex;gap:9px}
+.btn-row .btn{margin:0}
+.btn[disabled]{opacity:.5;pointer-events:none}
+textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);resize:vertical;min-height:90px;line-height:1.5}
+input[type=email],input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);margin-bottom:10px}
+label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:.85}
+.prog{height:7px;border-radius:6px;background:var(--paper);overflow:hidden;margin:10px 0 4px;display:none}
+.prog.on{display:block}
+.prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--gold));transition:width .3s}
+.status{font-size:12px;opacity:.7;text-align:center;margin-top:6px;min-height:16px}
+.verdict{border-radius:18px;padding:18px;margin-bottom:14px;color:#fff;box-shadow:var(--shadow);display:none}
+.verdict.on{display:block;animation:pop .3s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes pop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.verdict.halal{background:linear-gradient(150deg,var(--green-deep),var(--green))}
+.verdict.haram{background:linear-gradient(150deg,#8f2c2c,var(--red))}
+.verdict.doubt{background:linear-gradient(150deg,#9a6a1c,var(--amber))}
+.verdict .vtop{display:flex;align-items:center;gap:12px}
+.verdict .vicon{font-size:34px;flex:none}
+.verdict .vlabel{font-size:21px;font-weight:800;letter-spacing:-.3px}
+.verdict .vnote{font-size:13px;opacity:.9;margin-top:2px}
+.verdict .vbody{font-size:13px;line-height:1.55;margin-top:12px;background:rgba(255,255,255,.12);padding:11px 12px;border-radius:11px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+.chip{font-size:12.5px;padding:7px 11px;border-radius:9px;font-weight:600;display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fbf9f2}
+.chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.chip.h .dot{background:var(--green)}
+.chip.x .dot{background:var(--red)}
+.chip.d .dot{background:var(--amber)}
+.chip.u .dot{background:#888}
+.chip small{opacity:.6;font-weight:500}
+.dbrow{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;background:#fbf9f2}
+.dbrow .dot{width:11px;height:11px;border-radius:50%;flex:none}
+.dbrow .nm{font-size:13.5px;font-weight:600;text-transform:capitalize;flex:1}
+.dbrow .st{font-size:11px;font-weight:700;padding:3px 8px;border-radius:7px;text-transform:uppercase;letter-spacing:.3px}
+.st.h{background:rgba(31,122,90,.16);color:var(--green-deep)}
+.st.x{background:rgba(178,59,59,.16);color:var(--red)}
+.st.d{background:rgba(201,138,43,.18);color:var(--amber)}
+.search{margin-bottom:12px}
+.empty{text-align:center;padding:34px 16px;opacity:.55;font-size:13px}
+.count{font-size:12px;opacity:.65;margin-bottom:12px;text-align:center}
+.banner{font-size:11.5px;line-height:1.5;background:rgba(201,162,75,.13);border:1px solid rgba(201,162,75,.4);color:#6b531a;padding:10px 12px;border-radius:11px;margin-bottom:14px}
+.divider{text-align:center;font-size:11px;opacity:.5;margin:14px 0;text-transform:uppercase;letter-spacing:1px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#f6f3ea;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--shadow);opacity:0;transition:.25s;z-index:50;max-width:90%;text-align:center}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.mini{font-size:11px;opacity:.6;margin-top:8px;text-align:center;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="mark">☪</div>
+      <div><h1>Halal Scanner</h1><p>Scan ingredients · check against Islamic dietary law</p></div>
+    </div>
+    <nav>
+      <button class="on" data-v="scan">Scan</button>
+      <button data-v="db">Library</button>
+      <button data-v="email">Ask company</button>
+    </nav>
+  </header>
+  <main>
+    <section class="view on" id="v-scan">
+      <div class="card">
+        <h2>Capture the ingredients label</h2>
+        <p class="sub">Point your camera at the printed ingredients list. Hold steady and fill the frame for the clearest read.</p>
+        <div class="cam-wrap">
+          <video id="preview" autoplay playsinline muted></video>
+          <canvas id="canvas" hidden></canvas>
+          <div class="cam-frame"></div>
+          <div class="hint" id="camHint">Starting camera…</div>
+        </div>
+        <div style="height:11px"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="snap">📸 Capture &amp; read</button>
+          <button class="btn btn-ghost" id="flip" style="flex:0 0 52px;padding:0">🔄</button>
+        </div>
+        <div class="divider">or type / paste</div>
+        <textarea id="manual" placeholder="e.g. Sugar, gelatin, mono- and diglycerides, carmine (E120), natural flavor…"></textarea>
+        <div style="height:9px"></div>
+        <button class="btn btn-gold" id="checkManual">Check these ingredients</button>
+        <div class="prog" id="prog"><i></i></div>
+        <div class="status" id="status"></div>
+      </div>
+      <div class="verdict" id="verdict">
+        <div class="vtop">
+          <div class="vicon" id="vIcon">✓</div>
+          <div><div class="vlabel" id="vLabel">Halal</div><div class="vnote" id="vNote"></div></div>
+        </div>
+        <div class="vbody" id="vBody"></div>
+      </div>
+      <div class="card" id="resultCard" style="display:none">
+        <h2>Ingredient breakdown</h2>
+        <p class="sub">Each item screened against the library. Doubtful items depend on the source — verify with the company.</p>
+        <div class="chips" id="chips"></div>
+        <div class="mini" id="aiMini"></div>
+      </div>
+    </section>
+    <section class="view" id="v-db">
+      <div class="card">
+        <h2>Ingredient library</h2>
+        <p class="sub">Every ingredient the app has learned, stored permanently in the database. New ones are added automatically after each scan.</p>
+        <input type="text" class="search" id="search" placeholder="Search ingredients…">
+        <div class="count" id="dbCount"></div>
+        <div id="dbList"></div>
+      </div>
+    </section>
+    <section class="view" id="v-email">
+      <div class="banner">For doubtful ingredients, the safest path is to confirm the source directly with the manufacturer. Draft a question below, add the company's email, and send it from your own mail app.</div>
+      <div class="card">
+        <h2>Ask the company</h2>
+        <p class="sub">Let AI write a clear, polite inquiry about a specific ingredient, then open it in your email app ready to send.</p>
+        <label class="fld">Product or brand</label>
+        <input type="text" id="emProduct" placeholder="e.g. Brand X fruit gummies">
+        <label class="fld">Ingredient you're unsure about</label>
+        <input type="text" id="emIngredient" placeholder="e.g. gelatin, mono- and diglycerides">
+        <button class="btn btn-gold" id="draftBtn">✍️ Draft my question</button>
+        <div class="prog" id="emProg"><i></i></div>
+        <div style="height:12px"></div>
+        <label class="fld">Message (editable)</label>
+        <textarea id="emBody" style="min-height:150px" placeholder="Your drafted message will appear here…"></textarea>
+        <div style="height:6px"></div>
+        <label class="fld">Company email</label>
+        <input type="email" id="emTo" placeholder="support@company.com">
+        <label class="fld">Your email (so they can reply to you)</label>
+        <input type="email" id="emFrom" placeholder="you@email.com">
+        <button class="btn btn-primary" id="sendBtn">✉️ Open in email app</button>
+        <div class="mini">The app can't look up a company's address for you — find it on the packaging or their website, then paste it here.</div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const LABELS={h:{t:"Halal",cls:"h"},x:{t:"Haram",cls:"x"},d:{t:"Doubtful",cls:"d"},u:{t:"Unknown",cls:"u"}};
+let DB={}, stream=null, facing="environment";
+const $=id=>document.getElementById(id);
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._);t._=setTimeout(()=>t.classList.remove("on"),2400);}
+function setProg(el,p){el.classList.toggle("on",p>=0);if(p>=0)el.querySelector("i").style.width=p+"%";}
+function escape(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+/* load library from server */
+async function loadDb(){
+  try{const r=await fetch("/api/ingredients");DB=await r.json();}
+  catch(e){DB={};toast("Couldn't load library from server");}
+}
+loadDb();
+
+/* tabs */
+document.querySelectorAll("nav button").forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("on"));$("v-"+b.dataset.v).classList.add("on");
+    if(b.dataset.v==="db")renderDb();
+  };
+});
+
+/* camera */
+async function startCam(){
+  try{
+    if(stream)stream.getTracks().forEach(t=>t.stop());
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing}});
+    $("preview").srcObject=stream;$("camHint").textContent="Fill the frame with the ingredients list";
+  }catch(e){$("camHint").textContent="Camera unavailable — type or paste below";}
+}
+$("flip").onclick=()=>{facing=facing==="environment"?"user":"environment";startCam();};
+startCam();
+
+/* OCR */
+$("snap").onclick=async()=>{
+  if(!stream){toast("No camera — type the ingredients instead");return;}
+  const v=$("preview"),c=$("canvas");c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d").drawImage(v,0,0);
+  $("snap").disabled=true;$("status").textContent="Reading label…";setProg($("prog"),5);
+  try{
+    const{data}=await Tesseract.recognize(c,"eng",{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
+    setProg($("prog"),-1);$("status").textContent="";
+    const txt=data.text.trim();
+    if(!txt){toast("Couldn't read the label — try again or type it");$("snap").disabled=false;return;}
+    $("manual").value=txt;runCheck(txt);
+  }catch(e){toast("Read failed — type the ingredients instead");setProg($("prog"),-1);}
+  $("snap").disabled=false;
+};
+$("checkManual").onclick=()=>{const t=$("manual").value.trim();if(!t){toast("Enter or scan some ingredients first");return;}runCheck(t);};
+
+function parseIngredients(raw){
+  let s=raw.toLowerCase().replace(/ingredient[s]?\s*[:\-]/i,"");
+  let parts=s.split(/[,;•\n\r·]|\.\s/).map(x=>x.replace(/[()[\]{}*"]/g,"").replace(/\s+/g," ").trim());
+  parts=parts.filter(x=>x.length>1&&x.length<48&&/[a-z]/.test(x));
+  return [...new Set(parts)];
+}
+function lookup(name){
+  if(DB[name])return DB[name];
+  const base=name.split(" from ")[0].split(" of ")[0].trim();
+  if(DB[base])return DB[base];
+  for(const k in DB){if(k.length>4&&name.includes(k))return DB[k];}
+  return "u";
+}
+
+async function runCheck(raw){
+  $("verdict").classList.remove("on");
+  const items=parseIngredients(raw);
+  if(!items.length){toast("No ingredients detected");return;}
+  const results=items.map(n=>({name:n,status:lookup(n)}));
+  const unknowns=results.filter(r=>r.status==="u");
+  $("aiMini").textContent="";
+  if(unknowns.length){
+    $("status").textContent="Checking "+unknowns.length+" new ingredient(s) with AI…";
+    try{
+      const r=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({names:unknowns.map(u=>u.name)})});
+      if(r.ok){
+        const d=await r.json();
+        (d.results||[]).forEach(a=>{const row=results.find(x=>x.name===a.name);if(row&&["h","x","d"].includes(a.status)){row.status=a.status;DB[row.name]=a.status;}});
+        // save learned ones back to DB
+        const learned=results.filter(r=>unknowns.find(u=>u.name===r.name)&&r.status!=="u");
+        if(learned.length){fetch("/api/ingredients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:learned})});}
+        $("aiMini").textContent="New ingredients were assessed by AI and saved to the library.";
+      }else{$("aiMini").textContent="AI unavailable — unknown items left unverified.";}
+    }catch(e){$("aiMini").textContent="AI request failed — unknown items left unverified.";}
+    $("status").textContent="";
+  }
+  renderResult(results);
+}
+
+function renderResult(results){
+  const chips=$("chips");chips.innerHTML="";
+  results.forEach(r=>{const L=LABELS[r.status];const c=document.createElement("div");c.className="chip "+L.cls;c.innerHTML=`<span class="dot"></span>${escape(r.name)} <small>${L.t}</small>`;chips.appendChild(c);});
+  $("resultCard").style.display="block";
+  const hasHaram=results.some(r=>r.status==="x"),hasDoubt=results.some(r=>r.status==="d"),hasUnknown=results.some(r=>r.status==="u");
+  const v=$("verdict");v.className="verdict on";
+  if(hasHaram){
+    v.classList.add("haram");$("vIcon").textContent="✕";$("vLabel").textContent="Not Halal";$("vNote").textContent="Contains a prohibited ingredient";
+    const bad=results.filter(r=>r.status==="x").map(r=>r.name).join(", ");
+    $("vBody").innerHTML=`This product contains <b>${escape(bad)}</b>, which is haram under Islamic dietary law. It should not be consumed.`;
+  }else if(hasDoubt||hasUnknown){
+    v.classList.add("doubt");$("vIcon").textContent="!";$("vLabel").textContent="Doubtful";$("vNote").textContent="Verification needed before consuming";
+    const list=results.filter(r=>r.status==="d"||r.status==="u").map(r=>r.name).join(", ");
+    $("vBody").innerHTML=`No clearly haram ingredient was found, but these are source-dependent: <b>${escape(list)}</b>. They may come from animal, plant, or microbial sources. When in doubt, it is best to avoid (mashbooh) or confirm the source with the manufacturer — use the “Ask company” tab.`;
+  }else{
+    v.classList.add("halal");$("vIcon").textContent="✓";$("vLabel").textContent="Halal";$("vNote").textContent="No prohibited ingredients detected";
+    $("vBody").innerHTML=`Based on ingredient screening, every item appears permissible. Note: this is an ingredient check, not a certification. A product is fully assured only with a recognized halal certificate.`;
+  }
+  v.scrollIntoView({behavior:"smooth",block:"center"});
+}
+
+function renderDb(){
+  const q=($("search").value||"").toLowerCase().trim();
+  const list=$("dbList");list.innerHTML="";
+  const keys=Object.keys(DB).filter(k=>k.includes(q)).sort();
+  $("dbCount").textContent=keys.length+" of "+Object.keys(DB).length+" ingredients";
+  if(!keys.length){list.innerHTML='<div class="empty">No ingredients match your search.</div>';return;}
+  keys.forEach(k=>{const st=DB[k],L=LABELS[st]||LABELS.u;const row=document.createElement("div");row.className="dbrow";
+    const color=st==="h"?"var(--green)":st==="x"?"var(--red)":st==="d"?"var(--amber)":"#888";
+    row.innerHTML=`<span class="dot" style="background:${color}"></span><span class="nm">${escape(k)}</span><span class="st ${L.cls}">${L.t}</span>`;list.appendChild(row);});
+}
+$("search").oninput=()=>renderDb();
+
+/* email */
+$("draftBtn").onclick=async()=>{
+  const prod=$("emProduct").value.trim(),ing=$("emIngredient").value.trim();
+  if(!ing){toast("Tell me which ingredient to ask about");return;}
+  setProg($("emProg"),40);$("draftBtn").disabled=true;
+  let draft="";
+  try{
+    const r=await fetch("/api/draft-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({product:prod,ingredient:ing})});
+    if(r.ok){draft=(await r.json()).draft||"";}
+  }catch(e){}
+  if(!draft){draft=`Dear ${prod||"Customer Support"} team,\n\nI am writing to ask about the source of an ingredient in your product${prod?` (${prod})`:""}. Specifically, I would like to know the origin of: ${ing}.\n\nAs I follow a halal diet, I need to confirm whether this ingredient is derived from animal, plant, or synthetic/microbial sources, and if animal-derived, whether it meets halal requirements. If you hold any halal certification for this product, I would appreciate those details as well.\n\nThank you for your time and assistance.\n\nKind regards,`;}
+  $("emBody").value=draft;setProg($("emProg"),-1);$("draftBtn").disabled=false;toast("Draft ready — review and add emails");
+};
+$("sendBtn").onclick=()=>{
+  const to=$("emTo").value.trim(),from=$("emFrom").value.trim(),prod=$("emProduct").value.trim();
+  let body=$("emBody").value.trim();
+  if(!body){toast("Draft the message first");return;}
+  if(!to){toast("Add the company's email address");return;}
+  if(from)body+=`\n\nMy email for reply: ${from}`;
+  const subj=`Ingredient source inquiry${prod?` — ${prod}`:""} (halal verification)`;
+  window.location.href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+};
+</script>
+</body>
+</html>

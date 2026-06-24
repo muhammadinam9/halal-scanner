@@ -1,0 +1,17 @@
+{
+  "name": "halal-scanner",
+  "version": "1.0.0",
+  "description": "Halal Scanner — scan ingredients and check them against Islamic dietary law",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.12.0"
+  }
+}
