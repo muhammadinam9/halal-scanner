@@ -2,6 +2,7 @@ import express from "express";
 import pg from "pg";
 import path from "path";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,10 +15,18 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || "muhammadinam9@gmail.com";
+const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD; // Gmail APP PASSWORD (16 chars), not the normal password
 
 if (!ANTHROPIC_API_KEY) console.warn("⚠️  ANTHROPIC_API_KEY not set — AI lookups will fail.");
 if (!DATABASE_URL) console.warn("⚠️  DATABASE_URL not set — database features will fail.");
 if (!ADMIN_PASSWORD) console.warn("⚠️  ADMIN_PASSWORD not set — admin corrections are disabled.");
+if (!EMAIL_PASSWORD) console.warn("⚠️  EMAIL_PASSWORD not set — the contact form cannot send email.");
+
+/* Gmail SMTP transport for the contact form (only built if a password is configured). */
+const mailer = EMAIL_PASSWORD
+  ? nodemailer.createTransport({ service: "gmail", auth: { user: CONTACT_EMAIL, pass: EMAIL_PASSWORD } })
+  : null;
 
 /* ---------- Language helpers ---------- */
 const LANG_NAME = { en: "English", ur: "Urdu", hi: "Hindi", ar: "Arabic" };
@@ -488,6 +497,27 @@ app.get("/api/stats", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: "stats_failed", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: contact form — send an email via Gmail SMTP ---------- */
+app.post("/api/contact", async (req, res) => {
+  if (!mailer) return res.status(503).json({ error: "email_disabled" });
+  const name = String(req.body.name || "").trim().slice(0, 120);
+  const email = String(req.body.email || "").trim().slice(0, 200);
+  const message = String(req.body.message || "").trim().slice(0, 5000);
+  if (!message) return res.status(400).json({ error: "empty_message" });
+  try {
+    await mailer.sendMail({
+      from: `"Halal Scanner" <${CONTACT_EMAIL}>`,            // must be the authenticated Gmail account
+      to: CONTACT_EMAIL,
+      replyTo: email || undefined,                           // so you can reply straight to the sender
+      subject: `Halal Scanner — message from ${name || "a user"}`,
+      text: `${message}\n\n— ${name || "(no name)"}${email ? ` (${email})` : ""}`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "send_failed", detail: String(e.message) });
   }
 });
 
