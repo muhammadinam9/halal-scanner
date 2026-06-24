@@ -18,6 +18,17 @@ if (!ANTHROPIC_API_KEY) console.warn("⚠️  ANTHROPIC_API_KEY not set — AI l
 if (!DATABASE_URL) console.warn("⚠️  DATABASE_URL not set — database features will fail.");
 if (!ADMIN_PASSWORD) console.warn("⚠️  ADMIN_PASSWORD not set — admin corrections are disabled.");
 
+/* ---------- Language helpers ---------- */
+const LANG_NAME = { en: "English", ur: "Urdu", hi: "Hindi", ar: "Arabic" };
+const langName = code => LANG_NAME[code] || "English";
+const normLang = code => (LANG_NAME[String(code || "en")] ? String(code) : "en");
+// Return the explanation fields in the requested language, falling back to the English/base columns.
+function pickI18n(row, lang) {
+  const j = row.i18n || {};
+  if (lang && lang !== "en" && j[lang]) return j[lang];
+  return { reason: row.reason, description: row.description, sources: row.sources };
+}
+
 /* ---------- Postgres (Neon) ---------- */
 const { Pool } = pg;
 const pool = new Pool({
@@ -84,6 +95,9 @@ async function initDb() {
   await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS source TEXT");
   await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS description TEXT");
   await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS sources TEXT");
+  // Per-language cache of AI explanations: { "ur": {reason,description,sources}, "ar": {...} }.
+  // The base reason/description/sources columns hold the English/default text.
+  await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS i18n JSONB DEFAULT '{}'::jsonb");
 
   const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM ingredients");
   if (rows[0].n === 0) {
@@ -106,12 +120,31 @@ async function initDb() {
 /* ---------- API: get full library ---------- */
 app.get("/api/ingredients", async (_req, res) => {
   try {
-    const { rows } = await pool.query("SELECT name,status,reason FROM ingredients ORDER BY name");
+    const lang = normLang(req.query.lang);
+    const { rows } = await pool.query("SELECT name,status,reason,description,sources,i18n FROM ingredients ORDER BY name");
     const items = {}, reasons = {};
-    rows.forEach(r => { items[r.name] = r.status; if (r.reason) reasons[r.name] = r.reason; });
+    rows.forEach(r => { items[r.name] = r.status; const p = pickI18n(r, lang); if (p.reason) reasons[r.name] = p.reason; });
     res.json({ items, reasons });
   } catch (e) {
     res.status(500).json({ error: "db_error", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: single ingredient detail (for tap-to-detail cards) ---------- */
+app.get("/api/ingredient/:name", async (req, res) => {
+  const nm = String(req.params.name || "").toLowerCase().trim();
+  if (!nm) return res.status(400).json({ found: false });
+  try {
+    const lang = normLang(req.query.lang);
+    const { rows } = await pool.query(
+      "SELECT name,status,reason,description,sources,i18n FROM ingredients WHERE name = $1", [nm]
+    );
+    if (!rows.length) return res.json({ found: false });
+    const r = rows[0];
+    const p = pickI18n(r, lang);
+    res.json({ found: true, name: r.name, status: r.status, reason: p.reason, description: p.description, sources: p.sources });
+  } catch (e) {
+    res.status(500).json({ found: false, error: "db_error", detail: String(e.message) });
   }
 });
 
@@ -119,14 +152,26 @@ app.get("/api/ingredients", async (_req, res) => {
 app.post("/api/ingredients", async (req, res) => {
   try {
     const items = req.body.items || [];
+    const lang = normLang(req.body.lang);
     for (const it of items) {
       if (!it.name || !["h","x","d"].includes(it.status)) continue;
       const reason = it.status === "d" ? (it.reason || null) : null;
+      const description = it.description ? String(it.description).trim() : null;
+      const sources = it.sources ? String(it.sources).trim() : null;
+      // English goes in the base columns; other languages go in i18n[lang]. Status is language-independent.
+      const isEn = lang === "en";
+      const i18n = JSON.stringify({ [lang]: { reason, description, sources } });
       await pool.query(
-        `INSERT INTO ingredients(name,status,reason,source) VALUES ($1,$2,$3,'ai')
-         ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason
+        `INSERT INTO ingredients(name,status,reason,description,sources,i18n,source)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,'ai')
+         ON CONFLICT (name) DO UPDATE SET
+           status = EXCLUDED.status,
+           reason = COALESCE(EXCLUDED.reason, ingredients.reason),
+           description = COALESCE(EXCLUDED.description, ingredients.description),
+           sources = COALESCE(EXCLUDED.sources, ingredients.sources),
+           i18n = COALESCE(ingredients.i18n,'{}'::jsonb) || EXCLUDED.i18n
          WHERE ingredients.source IS DISTINCT FROM 'admin'`,
-        [it.name.toLowerCase().trim(), it.status, reason]
+        [it.name.toLowerCase().trim(), it.status, isEn ? reason : null, isEn ? description : null, isEn ? sources : null, i18n]
       );
     }
     res.json({ ok: true, saved: items.length });
@@ -179,9 +224,14 @@ app.post("/api/assess", async (req, res) => {
   if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: "no_api_key" });
   const names = req.body.names || [];
   if (!names.length) return res.json({ results: [] });
+  const lang = normLang(req.body.lang);
+  const langLine = lang === "en" ? "" :
+`Respond in ${langName(lang)}. The ingredient label may be in any language — read and understand it, but write all explanations, reasons, descriptions, and the verdict wording in ${langName(lang)}. Keep the "name" field exactly as given (do NOT translate it) and keep "status" as the letter code h/x/d.
+`;
   try {
     const prompt =
 `You are assessing food/cosmetic ingredients against Islamic dietary law (halal/haram).
+${langLine}
 For each ingredient return a status:
 - "h" = halal / generally permissible
 - "x" = haram (e.g. pork derivatives, intoxicating alcohol, blood, carmine)
@@ -190,8 +240,11 @@ Be conservative: if permissibility depends on the source, mark "d".
 For status "d" ONLY, add a "reason": one short plain-English sentence (under 15 words)
 explaining why it is source-dependent, e.g. "can be made from animal or plant fat".
 For "h" and "x", set "reason" to "".
+For EVERY ingredient also add:
+- "description": one short plain-English sentence saying what the ingredient is.
+- "sources": one short sentence on where it typically comes from (animal, plant, synthetic, or microbial).
 Return ONLY a JSON array, no prose, no markdown:
-[{"name":"<exact name as given>","status":"h|x|d","reason":"<short reason if d, else empty>"}]
+[{"name":"<exact name as given>","status":"h|x|d","reason":"<short reason if d, else empty>","description":"<one sentence>","sources":"<one sentence>"}]
 Ingredients: ${JSON.stringify(names)}`;
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -201,7 +254,7 @@ Ingredients: ${JSON.stringify(names)}`;
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
       },
-      body: JSON.stringify({ model: MODEL, max_tokens: 700, messages: [{ role:"user", content: prompt }] }),
+      body: JSON.stringify({ model: MODEL, max_tokens: 1200, messages: [{ role:"user", content: prompt }] }),
     });
     if (!r.ok) return res.status(502).json({ error: "claude_error", status: r.status });
     const d = await r.json();
@@ -217,8 +270,10 @@ Ingredients: ${JSON.stringify(names)}`;
 app.post("/api/draft-email", async (req, res) => {
   if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: "no_api_key" });
   const { product = "", ingredient = "" } = req.body;
+  const lang = normLang(req.body.lang);
+  const langLine = lang === "en" ? "" : ` Write the entire email in ${langName(lang)}.`;
   try {
-    const p = `Write a short, polite customer-service email asking a food company to clarify the source of a specific ingredient, because the sender follows a halal diet. Ask whether it is animal, plant, or microbial/synthetic in origin, and if animal-derived whether it is halal; also ask if the product holds halal certification. Product: "${product||"(unspecified)"}". Ingredient of concern: "${ingredient}". Keep it under 130 words. End with "Kind regards," on its own line and nothing after. Return only the email body, no subject line, no preamble.`;
+    const p = `Write a short, polite customer-service email asking a food company to clarify the source of a specific ingredient, because the sender follows a halal diet. Ask whether it is animal, plant, or microbial/synthetic in origin, and if animal-derived whether it is halal; also ask if the product holds halal certification. Product: "${product||"(unspecified)"}". Ingredient of concern: "${ingredient}". Keep it under 130 words. End with "Kind regards," on its own line and nothing after. Return only the email body, no subject line, no preamble.${langLine}`;
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
