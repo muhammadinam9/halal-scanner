@@ -160,6 +160,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
       <button class="on" data-v="scan">Scan</button>
       <button data-v="db">Library</button>
       <button data-v="email">Ask company</button>
+      <button data-v="contact">Contact</button>
     </nav>
   </header>
   <main>
@@ -243,6 +244,22 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <input type="email" id="emFrom" placeholder="you@email.com">
         <button class="btn btn-primary" id="sendBtn">✉️ Open in email app</button>
         <div class="mini">The app can't look up a company's address for you — find it on the packaging or their website, then paste it here.</div>
+      </div>
+    </section>
+    <section class="view" id="v-contact">
+      <div class="card">
+        <h2>Contact us</h2>
+        <p class="sub">Questions, ingredient corrections, or feedback? Send us a message — it opens in your own email app, ready to send.</p>
+        <label class="fld">Your name</label>
+        <input type="text" id="ctName" placeholder="Your name">
+        <label class="fld">Your email</label>
+        <input type="email" id="ctEmail" placeholder="you@email.com">
+        <label class="fld">Message</label>
+        <textarea id="ctMsg" placeholder="How can we help?"></textarea>
+        <div style="height:9px"></div>
+        <button class="btn btn-primary" id="ctSend">✉️ Send message</button>
+        <div class="mini" style="margin-top:10px">We'll reply to the email you send from.</div>
+        <div class="mini" style="margin-top:6px">Or email us directly: <a href="mailto:muhammadinam9@gmail.com" style="color:var(--green-deep);font-weight:700">muhammadinam9@gmail.com</a></div>
       </div>
     </section>
   </main>
@@ -696,6 +713,16 @@ $("sendBtn").onclick=()=>{
   if(from)body+=`\n\nMy email for reply: ${from}`;
   const subj=`Ingredient source inquiry${prod?` — ${prod}`:""} (halal verification)`;
   window.location.href=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+};
+
+/* Contact us — opens the user's own email app (mailto; no SMTP, no credentials) */
+$("ctSend").onclick=()=>{
+  const name=$("ctName").value.trim(),email=$("ctEmail").value.trim(),msg=$("ctMsg").value.trim();
+  if(!msg){toast("Please write a message first");return;}
+  const subj=`Halal Scanner — message from ${name||"a user"}`;
+  let body=msg;
+  if(name||email)body+=`\n\n— ${name}${email?` (${email})`:""}`;
+  window.location.href=`mailto:muhammadinam9@gmail.com?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
 };
 </script>
 </body>
