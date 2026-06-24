@@ -26,9 +26,10 @@ if (!EMAIL_PASSWORD) console.warn("⚠️  EMAIL_PASSWORD not set — the contac
 /* Gmail SMTP transport for the contact form (only built if a password is configured). */
 const mailer = EMAIL_PASSWORD
   ? nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com", port: 465, secure: true,
       auth: { user: CONTACT_EMAIL, pass: EMAIL_PASSWORD },
       connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 8000, // fail fast if SMTP is blocked
+      family: 4, // force IPv4 — Render containers have no IPv6 route (ENETUNREACH on IPv6)
     })
   : null;
 
