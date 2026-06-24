@@ -214,7 +214,7 @@ $("snap").onclick=async()=>{
   const v=$("preview"),c=$("canvas");c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d").drawImage(v,0,0);
   $("snap").disabled=true;$("status").textContent="Reading label…";setProg($("prog"),5);
   try{
-    const{data}=await Tesseract.recognize(c,ocrLang,{logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
+    const{data}=await Tesseract.recognize(c,ocrLang,{tessedit_pageseg_mode:'6',logger:m=>{if(m.status==="recognizing text")setProg($("prog"),Math.round(m.progress*90)+5);}});
     setProg($("prog"),-1);$("status").textContent="";
     const txt=data.text.trim();
     if(!txt){toast("Couldn't read the label — try again or type it");$("snap").disabled=false;return;}
@@ -224,10 +224,34 @@ $("snap").onclick=async()=>{
 };
 $("checkManual").onclick=()=>{const t=$("manual").value.trim();if(!t){toast("Enter or scan some ingredients first");return;}runCheck(t);};
 
+/* Keep only the text between "INGREDIENTS" and the first end-of-list marker
+   (allergen "Contains", a URL, ©, "all rights reserved", or a phone number).
+   "Contains 2% or less of" is a sub-header INSIDE the list, so it is not a stop. */
+function isolateIngredients(raw){
+  let t=raw.replace(/\r/g,"\n");
+  const start=/ingredient[s]?\b/i.exec(t);
+  if(start)t=t.slice(start.index+start[0].length).replace(/^\s*[:\-–]\s*/,"");
+  const stop=/\bcontains\b(?!\s*\d)|©|\bwww|\.com\b|https?:\/\//i;
+  const m=stop.exec(t);
+  if(m)t=t.slice(0,m.index);
+  return t;
+}
+/* Reject tokens that are clearly not ingredients (addresses, URLs, numbers, noise). */
+function isJunk(t){
+  if(t.length<3)return true;                                   // 1–2 letter noise
+  if(/©|\.com|www|http/.test(t))return true;                   // website / copyright
+  if(/\b(inc|llc|ltd|usa|co|reserved|rights|distributed|manufactured|stamp|please|call)\b/.test(t))return true;
+  if(/\b\d{5}\b/.test(t))return true;                          // ZIP code
+  if(/\d/.test(t))return true;                                 // any digits (nutrition %, "tx 75038")
+  if(!/[a-z]{3,}/.test(t))return true;                         // no real word
+  return false;
+}
 function parseIngredients(raw){
-  let s=raw.toLowerCase().replace(/ingredient[s]?\s*[:\-]/i,"");
-  let parts=s.split(/[,;•\n\r·]|\.\s/).map(x=>x.replace(/[()[\]{}*"]/g,"").replace(/\s+/g," ").trim());
-  parts=parts.filter(x=>x.length>1&&x.length<48&&/[a-z]/.test(x));
+  // 1) isolate the ingredients section, 2) turn parentheses into separators so
+  // "leavening (sodium acid pyrophosphate, baking soda)" splits into its sub-items.
+  let s=isolateIngredients(raw).toLowerCase().replace(/[()[\]{}]/g,",");
+  let parts=s.split(/[,;•\n·]|\.\s/).map(x=>x.replace(/["*]/g,"").replace(/\s+/g," ").trim());
+  parts=parts.filter(x=>x.length<48&&!isJunk(x));
   return [...new Set(parts)];
 }
 function lookup(name){
