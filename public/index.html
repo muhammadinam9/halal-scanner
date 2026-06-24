@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Halal Scanner</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
 :root{
   --ink:#0e2a25;--paper:#f3efe4;--paper-2:#ece6d6;--green:#1f7a5a;--green-deep:#0f5c41;
@@ -42,7 +43,7 @@ main{flex:1;padding:18px 16px 90px}
 .btn-row .btn{margin:0}
 .btn[disabled]{opacity:.5;pointer-events:none}
 textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);resize:vertical;min-height:90px;line-height:1.5}
-input[type=email],input[type=text]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);margin-bottom:10px}
+input[type=email],input[type=text],input[type=password]{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;font-family:inherit;background:#fbf9f2;color:var(--ink);margin-bottom:10px}
 label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:.85}
 .prog{height:7px;border-radius:6px;background:var(--paper);overflow:hidden;margin:10px 0 4px;display:none}
 .prog.on{display:block}
@@ -84,6 +85,23 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#f6f3ea;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--shadow);opacity:0;transition:.25s;z-index:50;max-width:90%;text-align:center}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .mini{font-size:11px;opacity:.6;margin-top:8px;text-align:center;line-height:1.5}
+.disclaimer{font-size:11px;line-height:1.5;text-align:center;color:#6b531a;background:rgba(201,162,75,.13);border:1px solid rgba(201,162,75,.4);border-radius:11px;padding:10px 12px;margin-top:4px}
+.overlay{position:fixed;inset:0;background:rgba(14,42,37,.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:22px;z-index:100;opacity:0;pointer-events:none;transition:.25s}
+.overlay.on{opacity:1;pointer-events:auto}
+.modal{background:var(--paper);border:1px solid var(--line);border-radius:20px;max-width:440px;width:100%;padding:22px 20px;box-shadow:var(--shadow);max-height:88vh;overflow:auto;transform:translateY(12px);transition:.25s}
+.overlay.on .modal{transform:none}
+.modal .mh{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.modal .mh .mark{width:34px;height:34px;font-size:18px}
+.modal h2{font-size:17px;margin:0;color:var(--green-deep);letter-spacing:-.2px}
+.modal p{font-size:13px;line-height:1.62;color:var(--ink);opacity:.86;margin:0 0 17px}
+.modal em{font-style:normal;font-weight:800;color:var(--green-deep)}
+.editbtn{border:1px solid var(--line);background:transparent;color:var(--green-deep);font-size:11px;font-weight:700;padding:5px 11px;border-radius:8px;cursor:pointer;flex:none}
+.editbtn:active{transform:scale(.96)}
+.seg{display:flex;gap:7px}
+.seg button{flex:1;border:1.5px solid var(--line);background:#fbf9f2;color:var(--ink);padding:10px 6px;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;transition:.15s}
+.seg button.on[data-s="h"]{background:var(--green);color:#fff;border-color:var(--green)}
+.seg button.on[data-s="d"]{background:var(--amber);color:#fff;border-color:var(--amber)}
+.seg button.on[data-s="x"]{background:var(--red);color:#fff;border-color:var(--red)}
 </style>
 </head>
 <body>
@@ -113,8 +131,10 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <div style="height:11px"></div>
         <div class="btn-row">
           <button class="btn btn-primary" id="startCam">📷 Start camera</button>
+          <button class="btn btn-gold" id="scanBarcode">🔖 Scan barcode</button>
           <button class="btn btn-primary" id="snap" style="display:none">📸 Capture &amp; read</button>
           <button class="btn btn-ghost" id="flip" style="flex:0 0 52px;padding:0;display:none">🔄</button>
+          <button class="btn btn-ghost" id="cancelBarcode" style="display:none">✕ Cancel</button>
         </div>
         <div class="divider">or type / paste</div>
         <textarea id="manual" placeholder="e.g. Sugar, gelatin, mono- and diglycerides, carmine (E120), natural flavor…"></textarea>
@@ -136,6 +156,7 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <div class="chips" id="chips"></div>
         <div class="mini" id="aiMini"></div>
       </div>
+      <div class="disclaimer">Ingredient screening only — not a fatwa or certification. Verify with the manufacturer and recognized halal certification.</div>
     </section>
     <section class="view" id="v-db">
       <div class="card">
@@ -173,6 +194,35 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<div class="overlay" id="disclaimerModal" role="dialog" aria-modal="true" aria-labelledby="dmTitle">
+  <div class="modal">
+    <div class="mh"><div class="mark">☪</div><h2 id="dmTitle">Before you begin</h2></div>
+    <p>Halal Scanner is an ingredient-screening tool to assist your own research. It is <em>not</em> a fatwa, a halal certification, or a substitute for guidance from a qualified Islamic scholar. Ingredient rulings — especially “doubtful” items — depend on the source, which can vary by manufacturer and region. Results may contain errors from label reading (OCR) or automated assessment. Always verify with the manufacturer and rely on recognized halal certification before consuming. You use this app at your own discretion and responsibility.</p>
+    <button class="btn btn-primary" id="ackBtn">I understand</button>
+  </div>
+</div>
+<div class="overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <div class="modal">
+    <div class="mh"><div class="mark">✎</div><h2 id="editTitle">Edit ingredient</h2></div>
+    <label class="fld">Status</label>
+    <div class="seg" id="editSeg">
+      <button type="button" data-s="h">Halal</button>
+      <button type="button" data-s="d">Doubtful</button>
+      <button type="button" data-s="x">Haram</button>
+    </div>
+    <div id="editReasonWrap" style="display:none">
+      <label class="fld" style="margin-top:13px">Reason (why it's doubtful)</label>
+      <textarea id="editReason" style="min-height:60px" placeholder="e.g. can be made from animal or plant fat"></textarea>
+    </div>
+    <label class="fld" style="margin-top:13px">Admin password</label>
+    <input type="password" id="editPass" placeholder="Required to save" autocomplete="off">
+    <div class="btn-row" style="margin-top:4px">
+      <button class="btn btn-ghost" id="editCancel">Cancel</button>
+      <button class="btn btn-primary" id="editSave">Save</button>
+    </div>
+    <div class="mini" id="editMsg"></div>
+  </div>
+</div>
 
 <script>
 const LABELS={h:{t:"Halal",cls:"h"},x:{t:"Haram",cls:"x"},d:{t:"Doubtful",cls:"d"},u:{t:"Unknown",cls:"u"}};
@@ -188,6 +238,12 @@ async function loadDb(){
   catch(e){DB={};REASONS={};toast("Couldn't load library from server");}
 }
 loadDb();
+
+/* first-visit disclaimer — show once per device */
+const DISCLAIMER_KEY="halalScanner.disclaimerAck.v1";
+let ackd=false;try{ackd=localStorage.getItem(DISCLAIMER_KEY)==="1";}catch(e){}
+if(!ackd)$("disclaimerModal").classList.add("on");
+$("ackBtn").onclick=()=>{try{localStorage.setItem(DISCLAIMER_KEY,"1");}catch(e){}$("disclaimerModal").classList.remove("on");};
 
 /* tabs */
 document.querySelectorAll("nav button").forEach(b=>{
@@ -225,6 +281,48 @@ $("snap").onclick=async()=>{
   $("snap").disabled=false;
 };
 $("checkManual").onclick=()=>{const t=$("manual").value.trim();if(!t){toast("Enter or scan some ingredients first");return;}runCheck(t);};
+
+/* Barcode scanning (ZXing) — a faster alternative to OCR for known products */
+let codeReader=null,barcodeActive=false;
+function stopBarcode(){
+  barcodeActive=false;
+  try{if(codeReader)codeReader.reset();}catch(e){}
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  $("preview").srcObject=null;
+  $("startCam").style.display="";$("scanBarcode").style.display="";
+  $("snap").style.display="none";$("flip").style.display="none";$("cancelBarcode").style.display="none";
+  $("camHint").textContent="Tap “Start camera” to scan a label";
+}
+$("scanBarcode").onclick=async()=>{
+  if(typeof ZXing==="undefined"){toast("Barcode scanner still loading — try again in a moment");return;}
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  $("startCam").style.display="none";$("scanBarcode").style.display="none";
+  $("snap").style.display="none";$("flip").style.display="none";$("cancelBarcode").style.display="";
+  $("camHint").textContent="Point the camera at the barcode";
+  if(!codeReader)codeReader=new ZXing.BrowserMultiFormatReader();
+  barcodeActive=true;
+  try{
+    await codeReader.decodeFromConstraints({video:{facingMode:"environment"}},$("preview"),(result)=>{
+      if(result&&barcodeActive){const code=result.getText();stopBarcode();lookupBarcode(code);}
+    });
+  }catch(e){toast("Camera unavailable for barcode scanning");stopBarcode();}
+};
+$("cancelBarcode").onclick=()=>stopBarcode();
+
+/* Look up a scanned barcode on Open Food Facts, then reuse the OCR check flow */
+async function lookupBarcode(code){
+  $("status").textContent="Looking up barcode "+code+"…";setProg($("prog"),25);
+  try{
+    const r=await fetch("/api/product/"+encodeURIComponent(code));
+    const d=await r.json();
+    setProg($("prog"),-1);$("status").textContent="";
+    if(!d.found){toast("Product not in database — use the camera (OCR) instead");return;}
+    if(!d.ingredients){toast("No ingredient list for this product — use the camera (OCR)");return;}
+    if(d.name)toast("Found: "+d.name);
+    $("manual").value=d.ingredients;
+    runCheck(d.ingredients);                 // same flow OCR uses
+  }catch(e){setProg($("prog"),-1);$("status").textContent="";toast("Lookup failed — use the camera instead");}
+}
 
 /* Keep only the text between "INGREDIENTS" and the first end-of-list marker
    (allergen "Contains", a URL, ©, "all rights reserved", or a phone number).
@@ -329,9 +427,49 @@ function renderDb(){
   if(!keys.length){list.innerHTML='<div class="empty">No ingredients match your search.</div>';return;}
   keys.forEach(k=>{const st=DB[k],L=LABELS[st]||LABELS.u;const row=document.createElement("div");row.className="dbrow";
     const color=st==="h"?"var(--green)":st==="x"?"var(--red)":st==="d"?"var(--amber)":"#888";
-    row.innerHTML=`<span class="dot" style="background:${color}"></span><span class="nm">${escape(k)}</span><span class="st ${L.cls}">${L.t}</span>`;list.appendChild(row);});
+    row.innerHTML=`<span class="dot" style="background:${color}"></span><span class="nm">${escape(k)}</span><span class="st ${L.cls}">${L.t}</span><button class="editbtn">Edit</button>`;
+    row.querySelector(".editbtn").onclick=()=>openEdit(k);
+    list.appendChild(row);});
 }
 $("search").oninput=()=>renderDb();
+
+/* admin manual correction */
+let editName=null,editStatus="h",adminPass="";
+function setEditSeg(s){
+  editStatus=s;
+  document.querySelectorAll("#editSeg button").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
+  $("editReasonWrap").style.display=s==="d"?"block":"none";
+}
+function openEdit(name){
+  editName=name;
+  let st=DB[name];if(!["h","x","d"].includes(st))st="d";
+  $("editTitle").textContent=name;
+  setEditSeg(st);
+  $("editReason").value=REASONS[name]||"";
+  $("editPass").value=adminPass;
+  $("editMsg").textContent="";
+  $("editModal").classList.add("on");
+}
+document.querySelectorAll("#editSeg button").forEach(b=>b.onclick=()=>setEditSeg(b.dataset.s));
+$("editCancel").onclick=()=>$("editModal").classList.remove("on");
+$("editSave").onclick=async()=>{
+  const pass=$("editPass").value;
+  if(!pass){$("editMsg").textContent="Enter the admin password.";return;}
+  const reason=editStatus==="d"?$("editReason").value.trim():"";
+  $("editSave").disabled=true;$("editMsg").textContent="Saving…";
+  try{
+    const r=await fetch("/api/ingredients/update",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pass,name:editName,status:editStatus,reason})});
+    if(r.status===401){$("editMsg").textContent="Wrong password.";$("editSave").disabled=false;return;}
+    if(r.status===503){$("editMsg").textContent="Admin editing is disabled on the server.";$("editSave").disabled=false;return;}
+    if(!r.ok){$("editMsg").textContent="Save failed — try again.";$("editSave").disabled=false;return;}
+    adminPass=pass; // remember for this session only (never stored)
+    DB[editName]=editStatus;
+    if(editStatus==="d"&&reason)REASONS[editName]=reason;else delete REASONS[editName];
+    $("editModal").classList.remove("on");$("editSave").disabled=false;
+    toast("Saved “"+editName+"”");
+    renderDb();
+  }catch(e){$("editMsg").textContent="Network error — try again.";$("editSave").disabled=false;}
+};
 
 /* email */
 $("draftBtn").onclick=async()=>{

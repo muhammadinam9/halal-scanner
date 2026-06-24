@@ -12,9 +12,11 @@ const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
 const MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 if (!ANTHROPIC_API_KEY) console.warn("⚠️  ANTHROPIC_API_KEY not set — AI lookups will fail.");
 if (!DATABASE_URL) console.warn("⚠️  DATABASE_URL not set — database features will fail.");
+if (!ADMIN_PASSWORD) console.warn("⚠️  ADMIN_PASSWORD not set — admin corrections are disabled.");
 
 /* ---------- Postgres (Neon) ---------- */
 const { Pool } = pg;
@@ -77,8 +79,11 @@ async function initDb() {
       added  TIMESTAMPTZ DEFAULT now()
     );
   `);
-  // For databases created before the reason column existed.
+  // For databases created before these columns existed (no data is dropped).
   await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS reason TEXT");
+  await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS source TEXT");
+  await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS description TEXT");
+  await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS sources TEXT");
 
   const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM ingredients");
   if (rows[0].n === 0) {
@@ -119,13 +124,53 @@ app.post("/api/ingredients", async (req, res) => {
       const reason = it.status === "d" ? (it.reason || null) : null;
       await pool.query(
         `INSERT INTO ingredients(name,status,reason,source) VALUES ($1,$2,$3,'ai')
-         ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason`,
+         ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason
+         WHERE ingredients.source IS DISTINCT FROM 'admin'`,
         [it.name.toLowerCase().trim(), it.status, reason]
       );
     }
     res.json({ ok: true, saved: items.length });
   } catch (e) {
     res.status(500).json({ error: "db_error", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: admin manual correction (password-protected) ---------- */
+app.post("/api/ingredients/update", async (req, res) => {
+  const { password, name, status, reason } = req.body || {};
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: "admin_disabled" });
+  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: "unauthorized" });
+  if (!name || !["h","x","d"].includes(status)) return res.status(400).json({ error: "bad_request" });
+  try {
+    const nm = String(name).toLowerCase().trim();
+    const rsn = status === "d" ? (reason ? String(reason).trim() : null) : null;
+    // source='admin' marks this as a manual correction so AI assessments never overwrite it.
+    await pool.query(
+      `INSERT INTO ingredients(name,status,reason,source) VALUES ($1,$2,$3,'admin')
+       ON CONFLICT (name) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason, source = 'admin'`,
+      [nm, status, rsn]
+    );
+    res.json({ ok: true, name: nm, status, reason: rsn });
+  } catch (e) {
+    res.status(500).json({ error: "db_error", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: barcode lookup via Open Food Facts ---------- */
+app.get("/api/product/:barcode", async (req, res) => {
+  const code = String(req.params.barcode || "").replace(/[^0-9]/g, "");
+  if (!code) return res.status(400).json({ found: false, error: "bad_barcode" });
+  try {
+    const url = `https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=product_name,generic_name,ingredients_text,ingredients_text_en`;
+    const r = await fetch(url, { headers: { "User-Agent": "HalalScanner/1.0 (ingredient screening)" } });
+    if (!r.ok) return res.status(502).json({ found: false, error: "off_error", status: r.status });
+    const d = await r.json();
+    if (d.status !== 1 || !d.product) return res.json({ found: false, barcode: code });
+    const p = d.product;
+    const ingredients = (p.ingredients_text_en || p.ingredients_text || "").trim();
+    res.json({ found: true, name: (p.product_name || p.generic_name || "").trim(), ingredients, barcode: code });
+  } catch (e) {
+    res.status(500).json({ found: false, error: "lookup_failed", detail: String(e.message) });
   }
 });
 
