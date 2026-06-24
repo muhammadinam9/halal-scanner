@@ -265,7 +265,9 @@ async function runCheck(raw){
 
 function renderResult(results){
   const chips=$("chips");chips.innerHTML="";
-  results.forEach(r=>{const L=LABELS[r.status];const c=document.createElement("div");c.className="chip "+L.cls;c.innerHTML=`<span class="dot"></span>${escape(r.name)} <small>${L.t}</small>`;chips.appendChild(c);});
+  const order={h:0,d:1,x:2,u:3};
+  const sorted=[...results].sort((a,b)=>order[a.status]-order[b.status]);
+  sorted.forEach(r=>{const L=LABELS[r.status];const c=document.createElement("div");c.className="chip "+L.cls;c.innerHTML=`<span class="dot"></span>${escape(r.name)} <small>${L.t}</small>`;chips.appendChild(c);});
   $("resultCard").style.display="block";
   const hasHaram=results.some(r=>r.status==="x"),hasDoubt=results.some(r=>r.status==="d"),hasUnknown=results.some(r=>r.status==="u");
   const v=$("verdict");v.className="verdict on";
