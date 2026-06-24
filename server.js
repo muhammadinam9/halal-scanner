@@ -1,6 +1,7 @@
 import express from "express";
 import pg from "pg";
 import path from "path";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,6 +99,17 @@ async function initDb() {
   // Per-language cache of AI explanations: { "ur": {reason,description,sources}, "ar": {...} }.
   // The base reason/description/sources columns hold the English/default text.
   await pool.query("ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS i18n JSONB DEFAULT '{}'::jsonb");
+
+  // Whole-product cache: a hash of the full label text -> parsed result, per language.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS product_cache (
+      hash    TEXT NOT NULL,
+      lang    TEXT NOT NULL DEFAULT 'en',
+      results JSONB NOT NULL,
+      added   TIMESTAMPTZ DEFAULT now(),
+      PRIMARY KEY (hash, lang)
+    );
+  `);
 
   const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM ingredients");
   if (rows[0].n === 0) {
@@ -263,6 +275,112 @@ Ingredients: ${JSON.stringify(names)}`;
     res.json({ results: Array.isArray(arr) ? arr : [] });
   } catch (e) {
     res.status(500).json({ error: "assess_failed", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: smart scan — parse + rule the whole label in one AI step ---------- */
+app.post("/api/scan", async (req, res) => {
+  if (!ANTHROPIC_API_KEY) return res.status(503).json({ error: "no_api_key" });
+  const text = String(req.body.text || "").trim();
+  if (!text) return res.json({ results: [], cached: false });
+  const lang = normLang(req.body.lang);
+  // Hash a normalized version of the label so trivial whitespace/case changes still hit cache.
+  const norm = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const hash = crypto.createHash("sha256").update(norm).digest("hex");
+  try {
+    // 1) Whole-product cache — a repeat scan of the same label is free (no AI call).
+    const hit = await pool.query("SELECT results FROM product_cache WHERE hash = $1 AND lang = $2", [hash, lang]);
+    let results, cached = false;
+    if (hit.rows.length) {
+      results = hit.rows[0].results || [];
+      cached = true;
+    } else {
+      const langLine = lang === "en" ? "" :
+        `Write every "reason", "description" and "sources" value in ${langName(lang)} (keep "name" in its original/English form and "status" as h/x/d).\n`;
+      const prompt =
+`You are a halal/haram food ingredient analyst. You are given the FULL raw text scanned from a product label; it may contain noise. Follow these rules exactly.
+
+1. STANDARD: Base every ruling on the IFANCA (Islamic Food and Nutrition Council of America) halal standard, and apply its positions on ingredient permissibility consistently.
+
+2. PARENTHETICAL NAMES: When an ingredient is written as "Category (Specific Name)" — e.g. "Emulsifier (Soya Lecithin)" or "Antioxidant (E306)" — judge it by the SPECIFIC name inside the parentheses and return it as ONE ingredient using that specific name (e.g. "soya lecithin", "e306"). NEVER output the generic category word ("emulsifier", "antioxidant", "raising agent", "stabilizer", "preservative") as a separate ingredient.
+
+3. DO NOT OVER-FLAG clearly permissible foods. These are "h" (halal), NOT doubtful: egg, milk, butter, cream, cheese (unless animal rennet is named), yogurt, honey, fish, fruit, vegetables, grains, sugar, salt, water, flour, yeast, vegetable oils, soya lecithin.
+
+4. Mark "x" (haram) ONLY for clearly prohibited items: pork and pork derivatives, lard, blood, intoxicating alcohol/ethanol, carmine/cochineal (E120), and ingredients explicitly from non-halal slaughtered animals.
+
+5. Mark "d" (doubtful) ONLY when permissibility genuinely depends on an unknown source: gelatin, mono- and diglycerides (E471), glycerin/glycerol, enzymes, rennet, natural flavors, shortening, animal fat, L-cysteine, and stearic acid/stearates when the source is unspecified.
+
+6. IGNORE non-ingredient text: storage instructions ("store in a cool and dry place"), origin ("product of Pakistan"), company names, addresses, allergen "contains" lines, and nutrition facts.
+
+7. For each ingredient return: "name" (the specific ingredient, lowercase), "status" ("h"/"x"/"d"), a "reason" (short, under 15 words, ONLY for "d" or "x"; "" for "h"), a "description" (one short sentence: what it is), and "sources" (one short sentence: typical origin — animal/plant/synthetic/microbial).
+${langLine}Return ONLY a JSON array, no prose, no markdown:
+[{"name":"...","status":"h|x|d","reason":"...","description":"...","sources":"..."}]
+
+Label text:
+"""
+${text}
+"""`;
+
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type":"application/json","x-api-key":ANTHROPIC_API_KEY,"anthropic-version":"2023-06-01" },
+        body: JSON.stringify({ model: MODEL, max_tokens: 2000, messages: [{ role:"user", content: prompt }] }),
+      });
+      if (!r.ok) return res.status(502).json({ error: "claude_error", status: r.status });
+      const d = await r.json();
+      let txt = d.content.filter(c => c.type === "text").map(c => c.text).join("\n").replace(/```json|```/g,"").trim();
+      let arr = JSON.parse(txt);
+      results = (Array.isArray(arr) ? arr : [])
+        .filter(x => x && x.name && ["h","x","d"].includes(x.status))
+        .map(x => ({
+          name: String(x.name).toLowerCase().trim(),
+          status: x.status,
+          reason: x.reason ? String(x.reason).trim() : "",
+          description: x.description ? String(x.description).trim() : "",
+          sources: x.sources ? String(x.sources).trim() : "",
+        }));
+
+      // Cache the whole-product result, and save each ingredient to the library.
+      await pool.query(
+        `INSERT INTO product_cache(hash,lang,results) VALUES ($1,$2,$3::jsonb)
+         ON CONFLICT (hash,lang) DO UPDATE SET results = EXCLUDED.results, added = now()`,
+        [hash, lang, JSON.stringify(results)]
+      );
+      const isEn = lang === "en";
+      for (const it of results) {
+        const reason = it.reason || null, description = it.description || null, sources = it.sources || null;
+        const i18n = JSON.stringify({ [lang]: { reason, description, sources } });
+        await pool.query(
+          `INSERT INTO ingredients(name,status,reason,description,sources,i18n,source)
+           VALUES ($1,$2,$3,$4,$5,$6::jsonb,'ai')
+           ON CONFLICT (name) DO UPDATE SET
+             status = EXCLUDED.status,
+             reason = COALESCE(EXCLUDED.reason, ingredients.reason),
+             description = COALESCE(EXCLUDED.description, ingredients.description),
+             sources = COALESCE(EXCLUDED.sources, ingredients.sources),
+             i18n = COALESCE(ingredients.i18n,'{}'::jsonb) || EXCLUDED.i18n
+           WHERE ingredients.source IS DISTINCT FROM 'admin'`,
+          [it.name, it.status, isEn ? reason : null, isEn ? description : null, isEn ? sources : null, i18n]
+        );
+      }
+    }
+
+    // 2) Admin corrections always win — overlay any admin-locked rulings onto the result.
+    if (results.length) {
+      const names = results.map(r => r.name);
+      const ov = await pool.query(
+        "SELECT name,status,reason,description,sources,i18n FROM ingredients WHERE name = ANY($1) AND source = 'admin'", [names]
+      );
+      if (ov.rows.length) {
+        const map = {};
+        ov.rows.forEach(r => { const p = pickI18n(r, lang); map[r.name] = { status: r.status, reason: p.reason || "", description: p.description || "", sources: p.sources || "" }; });
+        results = results.map(r => map[r.name] ? { name: r.name, ...map[r.name] } : r);
+      }
+    }
+
+    res.json({ results, cached });
+  } catch (e) {
+    res.status(500).json({ error: "scan_failed", detail: String(e.message) });
   }
 });
 

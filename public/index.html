@@ -473,26 +473,22 @@ function lookup(name){
 
 async function runCheck(raw){
   $("verdict").classList.remove("on");
-  const items=parseIngredients(raw);
-  if(!items.length){toast("No ingredients detected");return;}
-  const results=items.map(n=>({name:n,status:lookup(n)}));
-  const unknowns=results.filter(r=>r.status==="u");
+  const text=String(raw||"").trim();
+  if(!text){toast("No ingredients detected");return;}
   $("aiMini").textContent="";
-  if(unknowns.length){
-    $("status").textContent="Checking "+unknowns.length+" new ingredient(s) with AI…";
-    try{
-      const r=await fetch("/api/assess",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({names:unknowns.map(u=>u.name),lang})});
-      if(r.ok){
-        const d=await r.json();
-        (d.results||[]).forEach(a=>{const row=results.find(x=>x.name===a.name);if(row&&["h","x","d"].includes(a.status)){row.status=a.status;DB[row.name]=a.status;if(a.status==="d"&&a.reason){row.reason=a.reason;REASONS[row.name]=a.reason;}row.description=a.description||null;row.sources=a.sources||null;DETAILS[row.name]={description:a.description||null,sources:a.sources||null,reason:a.reason||null};}});
-        // save learned ones back to DB
-        const learned=results.filter(r=>unknowns.find(u=>u.name===r.name)&&r.status!=="u");
-        if(learned.length){fetch("/api/ingredients",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:learned,lang})});}
-        $("aiMini").textContent="New ingredients were assessed by AI and saved to the library.";
-      }else{$("aiMini").textContent="AI unavailable — unknown items left unverified.";}
-    }catch(e){$("aiMini").textContent="AI request failed — unknown items left unverified.";}
-    $("status").textContent="";
-  }
+  $("status").textContent="Analyzing the ingredients…";setProg($("prog"),30);
+  let results=[],cached=false;
+  try{
+    const r=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text,lang})});
+    if(r.ok){const d=await r.json();results=d.results||[];cached=!!d.cached;}
+    else if(r.status===503){$("aiMini").textContent="AI is not configured on the server.";}
+    else{$("aiMini").textContent="AI unavailable — couldn't analyze this label.";}
+  }catch(e){$("aiMini").textContent="AI request failed — couldn't analyze this label.";}
+  setProg($("prog"),-1);$("status").textContent="";
+  if(!results.length){if(!$("aiMini").textContent)toast("No ingredients detected");return;}
+  // refresh local caches so the Library + detail cards stay in sync
+  results.forEach(r=>{DB[r.name]=r.status;if(r.status==="d"&&r.reason)REASONS[r.name]=r.reason;else delete REASONS[r.name];DETAILS[r.name]={description:r.description||null,sources:r.sources||null,reason:r.reason||null};});
+  if(cached)$("aiMini").textContent="Loaded instantly from a previous scan of this product.";
   renderResult(results);
 }
 
