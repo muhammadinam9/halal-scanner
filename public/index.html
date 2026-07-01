@@ -120,6 +120,13 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
 .st.x{background:rgba(178,59,59,.16);color:var(--red)}
 .st.d{background:rgba(201,138,43,.18);color:var(--amber)}
 .search{margin-bottom:12px}
+.dbfilter{margin-bottom:12px}
+.dbfilter button{padding:8px 4px;font-size:12px}
+.dbfilter button.on[data-f="all"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+.dbfilter button.on[data-f="h"]{background:var(--green);color:#fff;border-color:var(--green)}
+.dbfilter button.on[data-f="d"]{background:var(--amber);color:#fff;border-color:var(--amber)}
+.dbfilter button.on[data-f="x"]{background:var(--red);color:#fff;border-color:var(--red)}
+.dbletter{font-size:12px;font-weight:800;color:var(--gold);opacity:.85;letter-spacing:1px;padding:12px 4px 4px;position:sticky;top:0;background:var(--paper-2);z-index:1}
 .empty{text-align:center;padding:34px 16px;opacity:.55;font-size:13px}
 .count{font-size:12px;opacity:.65;margin-bottom:12px;text-align:center}
 .banner{font-size:11.5px;line-height:1.5;background:rgba(201,162,75,.13);border:1px solid rgba(201,162,75,.4);color:#6b531a;padding:10px 12px;border-radius:11px;margin-bottom:14px}
@@ -233,6 +240,12 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <h2>Ingredient library</h2>
         <p class="sub">Every ingredient the app has learned, stored permanently in the database. New ones are added automatically after each scan.</p>
         <input type="text" class="search" id="search" placeholder="Search ingredients…">
+        <div class="seg dbfilter" id="dbFilter">
+          <button data-f="all" class="on">All</button>
+          <button data-f="h">✅ Halal</button>
+          <button data-f="d">⚠️ Doubtful</button>
+          <button data-f="x">⛔ Haram</button>
+        </div>
         <div class="count" id="dbCount"></div>
         <div id="dbList"></div>
       </div>
@@ -242,6 +255,9 @@ label.fld{display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;opacity:
         <input type="password" id="statsPass" placeholder="Admin password" autocomplete="off">
         <button class="btn btn-ghost" id="statsBtn">📊 View stats</button>
         <div id="statsOut" class="mini" style="margin-top:10px"></div>
+        <div style="height:14px"></div>
+        <button class="btn btn-ghost" id="cleanupBtn">🧹 Clean up junk ingredients</button>
+        <div id="cleanupOut" class="mini" style="margin-top:10px"></div>
       </div>
     </section>
     <section class="view" id="v-email">
@@ -676,13 +692,20 @@ $("dAskBtn").onclick=()=>{
   $("emIngredient").scrollIntoView({behavior:"smooth",block:"center"});
 };
 
+let dbFilter="all";
 function renderDb(){
   const q=($("search").value||"").toLowerCase().trim();
   const list=$("dbList");list.innerHTML="";
-  const keys=Object.keys(DB).filter(k=>k.includes(q)).sort();
-  $("dbCount").textContent=keys.length+" of "+Object.keys(DB).length+" ingredients";
+  const keys=Object.keys(DB).filter(k=>k.includes(q)&&(dbFilter==="all"||DB[k]===dbFilter)).sort();
+  const total=Object.keys(DB).length;
+  const label=dbFilter==="all"?"ingredients":(LABELS[dbFilter]||{}).t+" ingredients";
+  $("dbCount").textContent=keys.length+" of "+total+" "+(label||"ingredients");
   if(!keys.length){list.innerHTML='<div class="empty">No ingredients match your search.</div>';return;}
-  keys.forEach(k=>{const st=DB[k],L=LABELS[st]||LABELS.u;const row=document.createElement("div");row.className="dbrow";
+  let curLetter="";
+  keys.forEach(k=>{
+    const first=/[a-z]/i.test(k[0])?k[0].toUpperCase():"#";
+    if(first!==curLetter){curLetter=first;const h=document.createElement("div");h.className="dbletter";h.textContent=first;list.appendChild(h);}
+    const st=DB[k],L=LABELS[st]||LABELS.u;const row=document.createElement("div");row.className="dbrow";
     const color=st==="h"?"var(--green)":st==="x"?"var(--red)":st==="d"?"var(--amber)":"#888";
     const rsn=(st==="x"||st==="d")?(REASONS[k]||""):"";
     const rsnColor=st==="x"?"#b23b3b":"#9a7b1f";
@@ -695,6 +718,11 @@ function renderDb(){
     list.appendChild(row);});
 }
 $("search").oninput=()=>renderDb();
+document.querySelectorAll("#dbFilter button").forEach(b=>b.onclick=()=>{
+  dbFilter=b.dataset.f;
+  document.querySelectorAll("#dbFilter button").forEach(x=>x.classList.toggle("on",x===b));
+  renderDb();
+});
 
 /* admin anonymous usage stats */
 $("statsBtn").onclick=async()=>{
@@ -714,6 +742,33 @@ $("statsBtn").onclick=async()=>{
       <b>Scans in last 7 days:</b> ${d.last7Days}<br><br>
       <b>Top 20 scanned ingredients:</b><br>${top||"—"}</div>`;
   }catch(e){$("statsOut").textContent="Network error.";}
+};
+
+/* admin one-time cleanup: preview junk, then confirm to delete */
+$("cleanupBtn").onclick=async()=>{
+  const pass=$("statsPass").value||adminPass;
+  if(!pass){$("cleanupOut").textContent="Enter the admin password above first.";return;}
+  $("cleanupOut").textContent="Scanning…";
+  try{
+    // 1) preview
+    let r=await fetch("/api/ingredients/cleanup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pass})});
+    if(r.status===401){$("cleanupOut").textContent="Wrong password.";return;}
+    if(r.status===503){$("cleanupOut").textContent="Cleanup disabled — no ADMIN_PASSWORD set on the server.";return;}
+    if(!r.ok){$("cleanupOut").textContent="Couldn't scan the library.";return;}
+    adminPass=pass;
+    const p=await r.json();
+    if(!p.count){$("cleanupOut").textContent="✅ No junk found — library is clean.";return;}
+    const sample=(p.names||[]).slice(0,30).map(n=>"• "+escape(n)).join("<br>");
+    $("cleanupOut").innerHTML=`<div style="text-align:left"><b>${p.count}</b> junk item(s) found:<br>${sample}${p.count>30?"<br>…":""}</div>`;
+    if(!confirm(`Delete ${p.count} junk ingredient(s) from the library? This cannot be undone.`))return;
+    // 2) apply
+    $("cleanupOut").textContent="Deleting…";
+    r=await fetch("/api/ingredients/cleanup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pass,apply:true})});
+    if(!r.ok){$("cleanupOut").textContent="Delete failed.";return;}
+    const d=await r.json();
+    $("cleanupOut").textContent=`✅ Removed ${d.deleted} junk ingredient(s).`;
+    await loadDb();renderDb();
+  }catch(e){$("cleanupOut").textContent="Network error.";}
 };
 
 /* admin manual correction */

@@ -224,6 +224,25 @@ function verifiedKey(name){
   return m ? ("e"+m[1]) : null;
 }
 
+/* Reject OCR noise / label boilerplate that Claude sometimes returns as a fake
+   "ingredient" (e.g. "ml © allrights reserved", "oe see", "s = 4").
+   Returns true when the name is NOT a plausible ingredient and must be dropped. */
+function looksLikeGarbage(name){
+  const n = String(name || "").trim().toLowerCase();
+  if (!n) return true;
+  if (verifiedKey(n)) return false;                 // valid E-number, always keep
+  if (n.length < 3 || n.length > 60) return true;   // too short / absurdly long
+  const letters = (n.match(/[a-zÀ-ɏ؀-ۿ一-鿿]/gi) || []).length;
+  if (letters < 3) return true;                      // must have real letters, not "s = 4"
+  if (letters / n.length < 0.5) return true;         // mostly symbols/digits
+  if (/[©®™=@|{}\[\]<>*#~^\\]/.test(n)) return true;  // legal / math / junk symbols
+  if (/https?:|www\.|\.com/.test(n)) return true;    // URLs
+  // Label boilerplate / non-ingredient phrases.
+  if (/\b(all\s*rights?|reserved|copyright|batch|best before|expiry|expir|manufactured|packed|mfg|net\s*(wt|weight)|store in|keep in|cool and dry|barcode|see below|see back|see side|nutrition|ingredients?\s*:?\s*$)\b/.test(n)) return true;
+  if (!/[aeiouy]/.test(n)) return true;              // no vowel at all = OCR gibble ("oe see" keeps, "bcdf" drops)
+  return false;
+}
+
 async function initDb() {
   if (!DATABASE_URL) return;
   await pool.query(`
@@ -367,6 +386,7 @@ app.post("/api/ingredients", async (req, res) => {
     const lang = normLang(req.body.lang);
     for (const it of items) {
       if (!it.name || !["h","x","d"].includes(it.status)) continue;
+      if (looksLikeGarbage(it.name)) continue;   // never persist OCR noise / boilerplate
       const reason = it.status === "d" ? (it.reason || null) : null;
       const description = it.description ? String(it.description).trim() : null;
       const sources = it.sources ? String(it.sources).trim() : null;
@@ -425,6 +445,27 @@ app.post("/api/ingredients/delete", async (req, res) => {
     const nm = String(name).toLowerCase().trim();
     const r = await pool.query("DELETE FROM ingredients WHERE name = $1", [nm]);
     res.json({ ok: true, deleted: r.rowCount });
+  } catch (e) {
+    res.status(500).json({ error: "db_error", detail: String(e.message) });
+  }
+});
+
+/* ---------- API: admin one-time cleanup — purge stored OCR noise / boilerplate ---------- */
+app.post("/api/ingredients/cleanup", async (req, res) => {
+  const { password, apply } = req.body || {};
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: "admin_disabled" });
+  if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: "unauthorized" });
+  try {
+    // Never touch admin-locked rows. Scan the rest through the same garbage gate.
+    const { rows } = await pool.query("SELECT name FROM ingredients WHERE source IS DISTINCT FROM 'admin'");
+    const junk = rows.map(r => r.name).filter(looksLikeGarbage);
+    if (!apply) return res.json({ ok: true, preview: true, count: junk.length, names: junk.slice(0, 200) });
+    let deleted = 0;
+    if (junk.length) {
+      const r = await pool.query("DELETE FROM ingredients WHERE name = ANY($1) AND source IS DISTINCT FROM 'admin'", [junk]);
+      deleted = r.rowCount;
+    }
+    res.json({ ok: true, preview: false, deleted });
   } catch (e) {
     res.status(500).json({ error: "db_error", detail: String(e.message) });
   }
@@ -527,7 +568,7 @@ app.post("/api/scan", async (req, res) => {
 
 5. Mark "d" (doubtful) ONLY when permissibility genuinely depends on an unknown source: gelatin, mono- and diglycerides (E471), glycerin/glycerol, enzymes, rennet, natural flavors, shortening, animal fat, L-cysteine, and stearic acid/stearates when the source is unspecified.
 
-6. IGNORE non-ingredient text: storage instructions ("store in a cool and dry place"), origin ("product of Pakistan"), company names, addresses, allergen "contains" lines, and nutrition facts.
+6. IGNORE non-ingredient text: storage instructions ("store in a cool and dry place"), origin ("product of Pakistan"), company names, addresses, allergen "contains" lines, nutrition facts, legal text ("all rights reserved", "©"), barcodes/batch/expiry codes, and OCR gibberish or fragments that are not a real ingredient (e.g. "oe see", "s = 4", "ml"). If a token is not a recognizable ingredient, leave it out entirely.
 
 7. For each ingredient return: "name" (the specific ingredient, lowercase), "status" ("h"/"x"/"d"), a "reason" (short, under 15 words, ONLY for "d" or "x"; "" for "h"), a "description" (one short sentence: what it is), and "sources" (one short sentence: typical origin — animal/plant/synthetic/microbial).
 ${langLine}Return ONLY a JSON array, no prose, no markdown:
@@ -555,7 +596,8 @@ ${text}
           reason: x.reason ? String(x.reason).trim() : "",
           description: x.description ? String(x.description).trim() : "",
           sources: x.sources ? String(x.sources).trim() : "",
-        }));
+        }))
+        .filter(x => !looksLikeGarbage(x.name));
 
       // Authority override: verified E-number rulings always beat the AI.
       results = results.map(it => {
