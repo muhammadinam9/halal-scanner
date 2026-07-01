@@ -80,6 +80,150 @@ const REASONS = {
   tallow:"rendered animal fat, may be non-halal", "animal fat":"rendered animal fat, may be non-halal"
 };
 
+/* ---------- VERIFIED authority table ----------
+   Human-curated rulings based on published halal-certification guidance
+   (IFANCA / JAKIM / SANHA style lists). These are deterministic:
+   they are matched BEFORE any AI call and are never overwritten by AI. */
+const VERIFIED = {
+  // Colours E100–E199
+  e100:{s:"h",r:""}, e101:{s:"d",r:"riboflavin may be produced using animal-derived media"},
+  e102:{s:"h",r:""}, e104:{s:"h",r:""}, e110:{s:"h",r:""},
+  e120:{s:"x",r:"carmine/cochineal — made from insects, not permissible"},
+  e122:{s:"h",r:""}, e123:{s:"h",r:""}, e124:{s:"h",r:""}, e127:{s:"h",r:""},
+  e129:{s:"h",r:""}, e131:{s:"h",r:""}, e132:{s:"h",r:""}, e133:{s:"h",r:""},
+  e140:{s:"h",r:""}, e141:{s:"h",r:""}, e142:{s:"h",r:""},
+  e150a:{s:"h",r:""}, e150b:{s:"h",r:""}, e150c:{s:"h",r:""}, e150d:{s:"h",r:""},
+  e151:{s:"h",r:""}, e153:{s:"d",r:"vegetable carbon is halal; animal-bone charcoal is not"},
+  e155:{s:"h",r:""}, e160a:{s:"h",r:""},
+  e160b:{s:"h",r:""}, e160c:{s:"h",r:""},
+  e160d:{s:"h",r:""}, e160e:{s:"h",r:""},
+  e161b:{s:"h",r:""}, e162:{s:"h",r:""}, e163:{s:"h",r:""},
+  e170:{s:"h",r:""}, e171:{s:"h",r:""}, e172:{s:"h",r:""}, e173:{s:"h",r:""},
+  e174:{s:"h",r:""}, e175:{s:"h",r:""},
+  // Preservatives E200–E299
+  e200:{s:"h",r:""}, e201:{s:"h",r:""}, e202:{s:"h",r:""}, e203:{s:"h",r:""},
+  e210:{s:"h",r:""}, e211:{s:"h",r:""}, e212:{s:"h",r:""}, e213:{s:"h",r:""},
+  e220:{s:"h",r:""}, e221:{s:"h",r:""}, e222:{s:"h",r:""}, e223:{s:"h",r:""},
+  e224:{s:"h",r:""}, e226:{s:"h",r:""}, e227:{s:"h",r:""}, e228:{s:"h",r:""},
+  e234:{s:"h",r:""}, e235:{s:"h",r:""},
+  e249:{s:"h",r:""}, e250:{s:"h",r:""}, e251:{s:"h",r:""}, e252:{s:"h",r:""},
+  e260:{s:"h",r:""}, e261:{s:"h",r:""}, e262:{s:"h",r:""}, e263:{s:"h",r:""},
+  e270:{s:"h",r:""}, e280:{s:"h",r:""}, e281:{s:"h",r:""}, e282:{s:"h",r:""},
+  e283:{s:"h",r:""}, e290:{s:"h",r:""}, e296:{s:"h",r:""}, e297:{s:"h",r:""},
+  // Antioxidants & acids E300–E399
+  e300:{s:"h",r:""}, e301:{s:"h",r:""}, e302:{s:"h",r:""},
+  e304:{s:"d",r:"ascorbyl palmitate — palmitate can be animal or plant derived"},
+  e306:{s:"h",r:""}, e307:{s:"h",r:""}, e308:{s:"h",r:""}, e309:{s:"h",r:""},
+  e310:{s:"h",r:""}, e311:{s:"h",r:""}, e312:{s:"h",r:""},
+  e319:{s:"h",r:""}, e320:{s:"h",r:""}, e321:{s:"h",r:""},
+  e322:{s:"d",r:"lecithin is usually soy but can be egg or animal derived"},
+  e325:{s:"h",r:""}, e326:{s:"h",r:""}, e327:{s:"h",r:""},
+  e330:{s:"h",r:""}, e331:{s:"h",r:""}, e332:{s:"h",r:""}, e333:{s:"h",r:""},
+  e334:{s:"h",r:""}, e335:{s:"h",r:""}, e336:{s:"h",r:""}, e337:{s:"h",r:""},
+  e338:{s:"h",r:""}, e339:{s:"h",r:""}, e340:{s:"h",r:""}, e341:{s:"h",r:""},
+  e350:{s:"h",r:""}, e351:{s:"h",r:""}, e352:{s:"h",r:""},
+  e353:{s:"h",r:""}, e354:{s:"h",r:""}, e355:{s:"h",r:""},
+  e363:{s:"h",r:""}, e380:{s:"h",r:""},
+  // Thickeners & emulsifiers E400–E499
+  e400:{s:"h",r:""}, e401:{s:"h",r:""}, e402:{s:"h",r:""}, e403:{s:"h",r:""},
+  e404:{s:"h",r:""}, e405:{s:"h",r:""}, e406:{s:"h",r:""}, e407:{s:"h",r:""},
+  e407a:{s:"h",r:""}, e410:{s:"h",r:""}, e412:{s:"h",r:""}, e413:{s:"h",r:""},
+  e414:{s:"h",r:""}, e415:{s:"h",r:""}, e416:{s:"h",r:""}, e417:{s:"h",r:""},
+  e418:{s:"h",r:""}, e420:{s:"h",r:""}, e421:{s:"h",r:""},
+  e422:{s:"d",r:"glycerin/glycerol can be animal or vegetable derived"},
+  e430:{s:"d",r:"polyoxyethylene stearate — stearate source may be animal"},
+  e431:{s:"d",r:"stearate source may be animal"},
+  e432:{s:"d",r:"polysorbate — fatty acid source may be animal"},
+  e433:{s:"d",r:"polysorbate — fatty acid source may be animal"},
+  e434:{s:"d",r:"polysorbate — fatty acid source may be animal"},
+  e435:{s:"d",r:"polysorbate — fatty acid source may be animal"},
+  e436:{s:"d",r:"polysorbate — fatty acid source may be animal"},
+  e440:{s:"h",r:""}, e441:{s:"x",r:"gelatin — animal derived; haram unless certified halal source"},
+  e442:{s:"d",r:"ammonium phosphatides — fatty acid source may be animal"},
+  e444:{s:"h",r:""}, e445:{s:"h",r:""},
+  e450:{s:"h",r:""}, e451:{s:"h",r:""}, e452:{s:"h",r:""},
+  e460:{s:"h",r:""}, e461:{s:"h",r:""}, e463:{s:"h",r:""}, e464:{s:"h",r:""},
+  e465:{s:"h",r:""}, e466:{s:"h",r:""},
+  e470a:{s:"d",r:"fatty acid salts — source may be animal or plant"},
+  e470b:{s:"d",r:"fatty acid salts — source may be animal or plant"},
+  e471:{s:"d",r:"mono- and diglycerides — can be made from animal or plant fat"},
+  e472a:{s:"d",r:"fatty acid ester — source may be animal or plant"},
+  e472b:{s:"d",r:"fatty acid ester — source may be animal or plant"},
+  e472c:{s:"d",r:"fatty acid ester — source may be animal or plant"},
+  e472d:{s:"d",r:"fatty acid ester — source may be animal or plant"},
+  e472e:{s:"d",r:"fatty acid ester (DATEM) — source may be animal or plant"},
+  e472f:{s:"d",r:"fatty acid ester — source may be animal or plant"},
+  e473:{s:"d",r:"sucrose esters — fatty acid source may be animal"},
+  e474:{s:"d",r:"sucroglycerides — fatty acid source may be animal"},
+  e475:{s:"d",r:"polyglycerol esters — fatty acid source may be animal"},
+  e476:{s:"d",r:"polyglycerol polyricinoleate — glycerol source may be animal"},
+  e477:{s:"d",r:"propylene glycol esters — fatty acid source may be animal"},
+  e481:{s:"d",r:"sodium stearoyl lactylate — stearic acid source may be animal"},
+  e482:{s:"d",r:"calcium stearoyl lactylate — stearic acid source may be animal"},
+  e483:{s:"d",r:"stearyl tartrate — stearic acid source may be animal"},
+  e491:{s:"d",r:"sorbitan stearate — stearic acid source may be animal"},
+  e492:{s:"d",r:"sorbitan tristearate — stearic acid source may be animal"},
+  e493:{s:"d",r:"sorbitan laurate — fatty acid source may be animal"},
+  e494:{s:"d",r:"sorbitan oleate — fatty acid source may be animal"},
+  e495:{s:"d",r:"sorbitan palmitate — fatty acid source may be animal"},
+  // E500s
+  e500:{s:"h",r:""}, e501:{s:"h",r:""}, e503:{s:"h",r:""}, e504:{s:"h",r:""},
+  e507:{s:"h",r:""}, e508:{s:"h",r:""}, e509:{s:"h",r:""}, e511:{s:"h",r:""},
+  e512:{s:"h",r:""}, e513:{s:"h",r:""}, e514:{s:"h",r:""}, e515:{s:"h",r:""},
+  e516:{s:"h",r:""}, e517:{s:"h",r:""}, e520:{s:"h",r:""}, e521:{s:"h",r:""},
+  e524:{s:"h",r:""}, e525:{s:"h",r:""}, e526:{s:"h",r:""}, e527:{s:"h",r:""},
+  e528:{s:"h",r:""}, e529:{s:"h",r:""}, e530:{s:"h",r:""},
+  e535:{s:"h",r:""}, e536:{s:"h",r:""}, e538:{s:"h",r:""},
+  e541:{s:"h",r:""},
+  e542:{s:"x",r:"bone phosphate — animal bone derived; haram unless certified halal source"},
+  e551:{s:"h",r:""}, e552:{s:"h",r:""}, e553a:{s:"h",r:""}, e553b:{s:"h",r:""},
+  e554:{s:"h",r:""}, e556:{s:"h",r:""}, e558:{s:"h",r:""}, e559:{s:"h",r:""},
+  e570:{s:"d",r:"stearic acid — can be animal or vegetable sourced"},
+  e572:{s:"d",r:"magnesium stearate — stearic acid source may be animal"},
+  e574:{s:"h",r:""}, e575:{s:"h",r:""}, e576:{s:"h",r:""}, e577:{s:"h",r:""},
+  e578:{s:"h",r:""}, e579:{s:"h",r:""}, e585:{s:"h",r:""},
+  // Flavour enhancers E600s
+  e620:{s:"h",r:""}, e621:{s:"h",r:""}, e622:{s:"h",r:""}, e623:{s:"h",r:""},
+  e624:{s:"h",r:""}, e625:{s:"h",r:""},
+  e626:{s:"d",r:"guanylic acid — may be derived from fish or meat"},
+  e627:{s:"d",r:"disodium guanylate — may be derived from fish or meat"},
+  e628:{s:"d",r:"may be derived from fish or meat"},
+  e629:{s:"d",r:"may be derived from fish or meat"},
+  e630:{s:"d",r:"inosinic acid — may be derived from meat or fish"},
+  e631:{s:"d",r:"disodium inosinate — may be derived from meat or fish"},
+  e632:{s:"d",r:"may be derived from meat or fish"},
+  e633:{s:"d",r:"may be derived from meat or fish"},
+  e634:{s:"d",r:"may be derived from meat or fish"},
+  e635:{s:"d",r:"disodium ribonucleotides — may be derived from meat or fish"},
+  e640:{s:"d",r:"glycine — may be derived from gelatin"},
+  // Glazing agents & misc E900s
+  e900:{s:"h",r:""}, e901:{s:"h",r:""}, e902:{s:"h",r:""},
+  e903:{s:"h",r:""},
+  e904:{s:"d",r:"shellac — insect secretion; permissibility differs between authorities"},
+  e905:{s:"h",r:""}, e912:{s:"h",r:""}, e914:{s:"h",r:""},
+  e920:{s:"d",r:"L-cysteine — may be derived from human hair or animal feathers"},
+  e921:{s:"d",r:"L-cystine — may be derived from hair or feathers"},
+  e927b:{s:"h",r:""}, e938:{s:"h",r:""}, e939:{s:"h",r:""},
+  e941:{s:"h",r:""}, e942:{s:"h",r:""}, e948:{s:"h",r:""},
+  e950:{s:"h",r:""}, e951:{s:"h",r:""}, e952:{s:"h",r:""}, e953:{s:"h",r:""},
+  e954:{s:"h",r:""}, e955:{s:"h",r:""}, e957:{s:"h",r:""},
+  e960:{s:"h",r:""}, e961:{s:"h",r:""}, e962:{s:"h",r:""},
+  e965:{s:"h",r:""}, e966:{s:"h",r:""}, e967:{s:"h",r:""}, e968:{s:"h",r:""},
+  e999:{s:"d",r:"quillaia extract — may be processed with alcohol"},
+  e1100:{s:"d",r:"amylase enzyme — source may be animal, plant, or microbial"},
+  e1105:{s:"d",r:"lysozyme — usually from egg white, verify source"},
+  e1400:{s:"h",r:""}, e1404:{s:"h",r:""}, e1410:{s:"h",r:""}, e1412:{s:"h",r:""},
+  e1414:{s:"h",r:""}, e1420:{s:"h",r:""}, e1422:{s:"h",r:""}, e1440:{s:"h",r:""},
+  e1442:{s:"h",r:""}, e1450:{s:"h",r:""}, e1451:{s:"h",r:""},
+  e1505:{s:"h",r:""}, e1518:{s:"d",r:"triacetin — glycerol source may be animal"},
+  e1520:{s:"h",r:""}
+};
+// Normalize a token like "E-471", "INS 471", "e471i" to a VERIFIED key.
+function verifiedKey(name){
+  const m = String(name).toLowerCase().replace(/\s+/g,"").match(/^(?:e|ins)[\s\-]?(\d{3,4}[a-e]?)/);
+  return m ? ("e"+m[1]) : null;
+}
+
 async function initDb() {
   if (!DATABASE_URL) return;
   await pool.query(`
@@ -238,7 +382,9 @@ app.post("/api/ingredients", async (req, res) => {
            description = COALESCE(EXCLUDED.description, ingredients.description),
            sources = COALESCE(EXCLUDED.sources, ingredients.sources),
            i18n = COALESCE(ingredients.i18n,'{}'::jsonb) || EXCLUDED.i18n
-         WHERE ingredients.source IS DISTINCT FROM 'admin'`,
+         WHERE ingredients.source IS DISTINCT FROM 'admin'
+           AND NOT (ingredients.status = 'x' AND EXCLUDED.status IN ('d','h'))
+           AND NOT (ingredients.status = 'd' AND EXCLUDED.status = 'h')`,
         [it.name.toLowerCase().trim(), it.status, isEn ? reason : null, isEn ? description : null, isEn ? sources : null, i18n]
       );
     }
@@ -411,6 +557,16 @@ ${text}
           sources: x.sources ? String(x.sources).trim() : "",
         }));
 
+      // Authority override: verified E-number rulings always beat the AI.
+      results = results.map(it => {
+        const k = verifiedKey(it.name) || (VERIFIED[it.name] ? it.name : null);
+        if (k && VERIFIED[k]) {
+          const v = VERIFIED[k];
+          return { ...it, status: v.s, reason: v.r || it.reason };
+        }
+        return it;
+      });
+
       // Cache the whole-product result, and save each ingredient to the library.
       await pool.query(
         `INSERT INTO product_cache(hash,lang,results) VALUES ($1,$2,$3::jsonb)
@@ -430,7 +586,9 @@ ${text}
              description = COALESCE(EXCLUDED.description, ingredients.description),
              sources = COALESCE(EXCLUDED.sources, ingredients.sources),
              i18n = COALESCE(ingredients.i18n,'{}'::jsonb) || EXCLUDED.i18n
-           WHERE ingredients.source IS DISTINCT FROM 'admin'`,
+           WHERE ingredients.source IS DISTINCT FROM 'admin'
+             AND NOT (ingredients.status = 'x' AND EXCLUDED.status IN ('d','h'))
+             AND NOT (ingredients.status = 'd' AND EXCLUDED.status = 'h')`,
           [it.name, it.status, isEn ? reason : null, isEn ? description : null, isEn ? sources : null, i18n]
         );
       }
